@@ -1,13 +1,36 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { rainbowkitBurnerWallet } from "burner-connector";
 import { ShieldExclamationIcon } from "@heroicons/react/24/outline";
-import { useCopyToClipboard } from "~~/hooks/scaffold-eth";
 import { getParsedError, notification } from "~~/utils/scaffold-eth";
 
 const BURNER_WALLET_PK_KEY = "burnerWallet.pk";
 
 export const RevealBurnerPKModal = () => {
-  const { copyToClipboard, isCopiedToClipboard } = useCopyToClipboard();
+  const [isCopiedToClipboard, setIsCopiedToClipboard] = useState(false);
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+
+      setIsCopiedToClipboard(true);
+      setTimeout(() => setIsCopiedToClipboard(false), 800);
+    } catch (err) {
+      console.error("Failed to copy text:", err);
+    }
+  };
   const modalCheckboxRef = useRef<HTMLInputElement>(null);
 
   const handleCopyPK = async () => {

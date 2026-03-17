@@ -14,7 +14,7 @@ import {
   QrCodeIcon,
 } from "@heroicons/react/24/outline";
 import { BlockieAvatar } from "~~/components/scaffold-eth";
-import { useCopyToClipboard, useOutsideClick } from "~~/hooks/scaffold-eth";
+import { useOutsideClick } from "~~/hooks/scaffold-eth";
 import { getTargetNetworks } from "~~/utils/scaffold-eth";
 import { isENS } from "~~/utils/scaffold-eth/common";
 
@@ -39,8 +39,31 @@ export const AddressInfoDropdown = ({
   const { connector } = useAccount();
   const checkSumAddress = getAddress(address);
 
-  const { copyToClipboard: copyAddressToClipboard, isCopiedToClipboard: isAddressCopiedToClipboard } =
-    useCopyToClipboard();
+  const [isAddressCopiedToClipboard, setIsAddressCopiedToClipboard] = useState(false);
+
+  const copyAddressToClipboard = async (text: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+
+      setIsAddressCopiedToClipboard(true);
+      setTimeout(() => setIsAddressCopiedToClipboard(false), 800);
+    } catch (err) {
+      console.error("Failed to copy text:", err);
+    }
+  };
   const [selectingNetwork, setSelectingNetwork] = useState(false);
   const dropdownRef = useRef<HTMLDetailsElement>(null);
 

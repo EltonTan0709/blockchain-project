@@ -1,10 +1,33 @@
+import { useState } from "react";
 import Link from "next/link";
 import { CheckCircleIcon, DocumentDuplicateIcon } from "@heroicons/react/24/outline";
-import { useCopyToClipboard } from "~~/hooks/scaffold-eth/useCopyToClipboard";
 
 export const TransactionHash = ({ hash }: { hash: string }) => {
-  const { copyToClipboard: copyAddressToClipboard, isCopiedToClipboard: isAddressCopiedToClipboard } =
-    useCopyToClipboard();
+  const [isAddressCopiedToClipboard, setIsAddressCopiedToClipboard] = useState(false);
+
+  const copyAddressToClipboard = async (text: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+
+      setIsAddressCopiedToClipboard(true);
+      setTimeout(() => setIsAddressCopiedToClipboard(false), 800);
+    } catch (err) {
+      console.error("Failed to copy text:", err);
+    }
+  };
 
   return (
     <div className="flex items-center">
