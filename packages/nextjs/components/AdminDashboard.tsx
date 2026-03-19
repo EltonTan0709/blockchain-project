@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { formatUnits } from "viem";
 import { useReadContract } from "wagmi";
+import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
+
+const INSURANCE_POOL_ADDRESS = CONTRACTS.InsurancePool;
+const TOKEN_DECIMALS = CONTRACTS.TOKEN_DECIMALS;
 
 const insurancePoolAbi = [
   {
@@ -20,14 +24,6 @@ const insurancePoolAbi = [
     outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
-
-// TODO: replace with your deployed InsurancePool address
-const INSURANCE_POOL_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
-
-// IMPORTANT: match your token decimals
-// use 6 if your MockUSDC is like real USDC
-// use 18 if your token was deployed with 18 decimals
-const TOKEN_DECIMALS = 18;
 
 function StatCard({ title, value, subtitle }: { title: string; value: string; subtitle?: string }) {
   return (

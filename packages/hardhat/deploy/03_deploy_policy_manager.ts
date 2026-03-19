@@ -1,0 +1,32 @@
+import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { DeployFunction } from "hardhat-deploy/types";
+
+const deployPolicyManager: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+  const { deployments, getNamedAccounts, ethers } = hre;
+  const { deploy, get, log } = deployments;
+  const { deployer } = await getNamedAccounts();
+
+  const mockUSDC = await get("MockUSDC");
+  const insurancePool = await get("InsurancePool");
+
+  const policyManager = await deploy("PolicyManager", {
+    from: deployer,
+    args: [mockUSDC.address, insurancePool.address, deployer],
+    log: true,
+    autoMine: true,
+  });
+
+  log(`PolicyManager deployed at ${policyManager.address}`);
+
+  const insurancePoolContract = await ethers.getContractAt("InsurancePool", insurancePool.address);
+  const tx = await insurancePoolContract.setPolicyManager(policyManager.address, {
+    gasLimit: 100000,
+  });
+  await tx.wait();
+
+  log(`InsurancePool policyManager set to ${policyManager.address}`);
+};
+
+export default deployPolicyManager;
+deployPolicyManager.tags = ["PolicyManager"];
+deployPolicyManager.dependencies = ["MockUSDC", "InsurancePool"];

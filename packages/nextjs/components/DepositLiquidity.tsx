@@ -4,6 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { formatUnits, parseUnits } from "viem";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
+
+const MOCK_USDC_ADDRESS = CONTRACTS.MockUSDC;
+const INSURANCE_POOL_ADDRESS = CONTRACTS.InsurancePool;
+const TOKEN_DECIMALS = CONTRACTS.TOKEN_DECIMALS;
 
 const mockUsdcAbi = [
   {
@@ -51,10 +56,6 @@ const insurancePoolAbi = [
     outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
-
-const MOCK_USDC_ADDRESS = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
-const INSURANCE_POOL_ADDRESS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
-const TOKEN_DECIMALS = 18;
 
 export default function DepositLiquidity() {
   const { address, isConnected } = useAccount();

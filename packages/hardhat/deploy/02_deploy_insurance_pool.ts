@@ -18,3 +18,4 @@ const deployInsurancePool: DeployFunction = async function (hre: HardhatRuntimeE
 export default deployInsurancePool;
 
 deployInsurancePool.tags = ["InsurancePool"];
+deployInsurancePool.dependencies = ["MockUSDC"];

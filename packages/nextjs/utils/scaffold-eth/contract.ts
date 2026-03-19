@@ -79,6 +79,13 @@ export type GenericContractsDeclaration = {
   };
 };
 
+export const CONTRACTS = {
+  MockUSDC: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+  InsurancePool: "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+  PolicyManager: "0x9A676e781A523b5d0C0e43731313A708CB607508",
+  TOKEN_DECIMALS: 6,
+} as const;
+
 export const contracts = contractsData as GenericContractsDeclaration | null;
 
 type ConfiguredChainId = (typeof scaffoldConfig)["targetNetworks"][0]["id"];
