@@ -81,8 +81,8 @@ export type GenericContractsDeclaration = {
 
 export const CONTRACTS = {
   MockUSDC: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-  InsurancePool: "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-  PolicyManager: "0x9A676e781A523b5d0C0e43731313A708CB607508",
+  InsurancePool: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+  PolicyManager: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
   TOKEN_DECIMALS: 6,
 } as const;
 

@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatUnits, parseUnits } from "viem";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
 import deployedContracts from "~~/contracts/deployedContracts";
 import { notification } from "~~/utils/scaffold-eth";
 import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
+import { POLICY_PLANS, getPolicyTypeLabel, getTriggerLabel } from "~~/utils/scaffold-eth/policyPlans";
 
 const POLICY_TYPE_OPTIONS = [
   { label: "Flight Delay", value: 0 },
@@ -15,9 +17,11 @@ const POLICY_TYPE_OPTIONS = [
 const HOURS_IN_SECONDS = 3600;
 
 export const BuyPolicyForm = () => {
+  const searchParams = useSearchParams();
   const { address, chain } = useAccount();
   const { writeContractAsync } = useWriteContract();
 
+  const [selectedPlanId, setSelectedPlanId] = useState("");
   const [flightNumber, setFlightNumber] = useState("");
   const [departureDateTime, setDepartureDateTime] = useState("");
   const [policyType, setPolicyType] = useState(0);
@@ -36,6 +40,42 @@ export const BuyPolicyForm = () => {
   const MOCK_USDC_ADDRESS = CONTRACTS.MockUSDC as `0x${string}`;
   const POLICY_MANAGER_ADDRESS = CONTRACTS.PolicyManager as `0x${string}`;
   const TOKEN_DECIMALS = CONTRACTS.TOKEN_DECIMALS;
+
+  useEffect(() => {
+    const planIdParam = searchParams.get("planId");
+    const policyTypeParam = searchParams.get("policyType");
+    const coverageParam = searchParams.get("coverage");
+    const premiumParam = searchParams.get("premium");
+    const durationParam = searchParams.get("duration");
+
+    if (planIdParam) {
+      setSelectedPlanId(planIdParam);
+    }
+
+    if (policyTypeParam !== null) {
+      const parsedPolicyType = Number(policyTypeParam);
+      if (!Number.isNaN(parsedPolicyType)) {
+        setPolicyType(parsedPolicyType);
+      }
+    }
+
+    if (coverageParam !== null) {
+      setCoverageAmount(coverageParam);
+    }
+
+    if (premiumParam !== null) {
+      setPremium(premiumParam);
+    }
+
+    if (durationParam !== null) {
+      setDurationHours(durationParam);
+    }
+  }, [searchParams]);
+
+  const selectedPlan = useMemo(() => {
+    if (!selectedPlanId) return null;
+    return POLICY_PLANS.find(plan => plan.id === selectedPlanId) ?? null;
+  }, [selectedPlanId]);
 
   const departureTimestamp = useMemo(() => {
     if (!departureDateTime) return 0;
@@ -96,13 +136,12 @@ export const BuyPolicyForm = () => {
   });
 
   const balanceDisplay = typeof usdcBalance === "bigint" ? formatUnits(usdcBalance, TOKEN_DECIMALS) : "—";
-
   const allowanceDisplay = typeof allowance === "bigint" ? formatUnits(allowance, TOKEN_DECIMALS) : "—";
 
   const allowanceBigInt = typeof allowance === "bigint" ? allowance : 0n;
   const hasEnoughAllowance = !!premiumParsed && allowanceBigInt >= premiumParsed;
 
-  const canApprove = isAbiReady && isPremiumValid && !hasEnoughAllowance;
+  const canApprove = isAbiReady && isPremiumValid && !hasEnoughAllowance && !isApproving;
 
   const canBuy =
     !!policyManagerAbi &&
@@ -123,10 +162,18 @@ export const BuyPolicyForm = () => {
   const resetForm = () => {
     setFlightNumber("");
     setDepartureDateTime("");
-    setPolicyType(0);
-    setCoverageAmount("100");
-    setDurationHours("24");
-    setPremium("10");
+
+    if (selectedPlan) {
+      setPolicyType(selectedPlan.policyType);
+      setCoverageAmount(selectedPlan.coverage);
+      setDurationHours(selectedPlan.duration);
+      setPremium(selectedPlan.premium);
+    } else {
+      setPolicyType(0);
+      setCoverageAmount("100");
+      setDurationHours("24");
+      setPremium("10");
+    }
   };
 
   const handleApprove = async () => {
@@ -196,6 +243,28 @@ export const BuyPolicyForm = () => {
           Protect your trip against flight delays and cancellations using MockUSDC.
         </p>
 
+        {selectedPlan && (
+          <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/10 p-4">
+            <div className="text-sm font-semibold text-primary">Selected Plan</div>
+            <div className="mt-2 text-lg font-bold">{selectedPlan.title}</div>
+            <div className="mt-1 text-sm text-base-content/70">{selectedPlan.description}</div>
+            <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-4">
+              <div>
+                <span className="font-semibold">Type:</span> {getPolicyTypeLabel(selectedPlan.policyType)}
+              </div>
+              <div>
+                <span className="font-semibold">Coverage:</span> {selectedPlan.coverage} USDC
+              </div>
+              <div>
+                <span className="font-semibold">Premium:</span> {selectedPlan.premium} USDC
+              </div>
+              <div>
+                <span className="font-semibold">Trigger:</span> {getTriggerLabel(selectedPlan)}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2">
           <div className="md:col-span-2">
             <label className="mb-2 block text-sm font-medium">Flight Number</label>
@@ -220,11 +289,7 @@ export const BuyPolicyForm = () => {
 
           <div>
             <label className="mb-2 block text-sm font-medium">Policy Type</label>
-            <select
-              value={policyType}
-              onChange={e => setPolicyType(Number(e.target.value))}
-              className="select select-bordered w-full"
-            >
+            <select value={policyType} disabled className="select select-bordered w-full bg-base-200">
               {POLICY_TYPE_OPTIONS.map(option => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -240,9 +305,8 @@ export const BuyPolicyForm = () => {
               min="0"
               step="0.01"
               value={coverageAmount}
-              onChange={e => setCoverageAmount(e.target.value)}
-              placeholder="100"
-              className="input input-bordered w-full"
+              readOnly
+              className="input input-bordered w-full bg-base-200"
             />
           </div>
 
@@ -253,24 +317,34 @@ export const BuyPolicyForm = () => {
               min="0"
               step="0.01"
               value={premium}
-              onChange={e => setPremium(e.target.value)}
-              placeholder="10"
-              className="input input-bordered w-full"
+              readOnly
+              className="input input-bordered w-full bg-base-200"
             />
           </div>
 
           <div className="md:col-span-2">
-            <label className="mb-2 block text-sm font-medium">Claim Window Duration (hours)</label>
+            <label className="mb-2 block text-sm font-medium">Policy Window (hours)</label>
             <input
               type="number"
               min="1"
               step="1"
               value={durationHours}
-              onChange={e => setDurationHours(e.target.value)}
-              placeholder="24"
-              className="input input-bordered w-full"
+              readOnly
+              className="input input-bordered w-full bg-base-200"
             />
           </div>
+
+          {selectedPlan && (
+            <div className="md:col-span-2">
+              <label className="mb-2 block text-sm font-medium">Payout Trigger</label>
+              <input
+                type="text"
+                value={getTriggerLabel(selectedPlan)}
+                readOnly
+                className="input input-bordered w-full bg-base-200"
+              />
+            </div>
+          )}
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-4 rounded-2xl bg-base-200 p-4 text-sm md:grid-cols-2">
@@ -298,7 +372,7 @@ export const BuyPolicyForm = () => {
           <div>Departure time: {isDepartureValid ? "OK" : "Must be in the future"}</div>
           <div>Coverage amount: {isCoverageValid ? "OK" : "Invalid"}</div>
           <div>Premium: {isPremiumValid ? "OK" : "Invalid"}</div>
-          <div>Claim window: {isDurationValid ? "OK" : "Invalid"}</div>
+          <div>Policy window: {isDurationValid ? "OK" : "Invalid"}</div>
           <div>Allowance: {hasEnoughAllowance ? "OK" : "Approval required"}</div>
           <div>Contract ABI: {isAbiReady ? "OK" : "Not loaded"}</div>
         </div>
@@ -310,15 +384,11 @@ export const BuyPolicyForm = () => {
         )}
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <button
-            className="btn btn-outline btn-primary flex-1"
-            onClick={handleApprove}
-            disabled={!canApprove || isApproving}
-          >
+          <button className="btn btn-outline btn-primary flex-1" onClick={handleApprove} disabled={!canApprove}>
             {isApproving ? "Approving..." : "Approve USDC"}
           </button>
 
-          <button className="btn btn-primary flex-1" onClick={handleBuyPolicy} disabled={!canBuy || isBuying}>
+          <button className="btn btn-primary flex-1" onClick={handleBuyPolicy} disabled={!canBuy}>
             {isBuying ? "Purchasing..." : "Buy Policy"}
           </button>
         </div>
