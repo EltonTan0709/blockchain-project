@@ -5,45 +5,68 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
-import { Bars3Icon, BugAntIcon } from "@heroicons/react/24/outline";
+import { Bars3Icon } from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useAdminWallet } from "~~/hooks/scaffold-eth/useAdminWallet";
 
 type HeaderMenuLink = {
   label: string;
   href: string;
-  icon?: React.ReactNode;
+  adminOnly?: boolean;
 };
 
-export const menuLinks: HeaderMenuLink[] = [
+const MENU_LINKS: HeaderMenuLink[] = [
   {
     label: "Home",
     href: "/",
   },
   {
-    label: "Debug Contracts",
-    href: "/debug",
-    icon: <BugAntIcon className="h-4 w-4" />,
+    label: "Plans",
+    href: "/insurance-plans",
+  },
+  {
+    label: "Buy Policy",
+    href: "/buy-policy",
+  },
+  {
+    label: "My Policies",
+    href: "/my-policies",
+  },
+  {
+    label: "Pool",
+    href: "/pool",
+    adminOnly: true,
+  },
+  {
+    label: "Admin",
+    href: "/admin",
+    adminOnly: true,
+  },
+  {
+    label: "Manage Flights",
+    href: "/admin/flights",
+    adminOnly: true,
   },
 ];
 
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
+  const { isAdmin } = useAdminWallet();
+  const visibleMenuLinks = MENU_LINKS.filter(link => !link.adminOnly || isAdmin);
 
   return (
     <>
-      {menuLinks.map(({ label, href, icon }) => {
-        const isActive = pathname === href;
+      {visibleMenuLinks.map(({ label, href }) => {
+        const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
         return (
           <li key={href}>
             <Link
               href={href}
-              passHref
               className={`${
                 isActive ? "bg-secondary shadow-md" : ""
-              } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full gap-2 grid grid-flow-col`}
+              } hover:bg-secondary hover:shadow-md focus:!bg-secondary active:!text-neutral py-1.5 px-3 text-sm rounded-full`}
             >
-              {icon}
               <span>{label}</span>
             </Link>
           </li>
@@ -81,13 +104,13 @@ export const Header = () => {
             <HeaderMenuLinks />
           </ul>
         </details>
-        <Link href="/" passHref className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
+        <Link href="/" className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
           <div className="flex relative w-10 h-10">
-            <Image alt="SE2 logo" className="cursor-pointer" fill src="/logo.svg" />
+            <Image alt="FlightSure logo" className="cursor-pointer" fill src="/logo.svg" />
           </div>
           <div className="flex flex-col">
-            <span className="font-bold leading-tight">Scaffold-ETH</span>
-            <span className="text-xs">Ethereum dev stack</span>
+            <span className="font-bold leading-tight">FlightSure MVP</span>
+            <span className="text-xs">Flight insurance demo</span>
           </div>
         </Link>
         <ul className="hidden lg:flex lg:flex-nowrap menu menu-horizontal px-1 gap-2">

@@ -82,6 +82,9 @@ export default function AdminDashboard() {
           <Link href="/pool" className="btn btn-primary">
             Deposit Liquidity
           </Link>
+          <Link href="/admin/flights" className="btn btn-secondary">
+            Manage Flights
+          </Link>
           <button className="btn btn-outline" disabled>
             View Policies
           </button>
