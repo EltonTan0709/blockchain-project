@@ -65,10 +65,8 @@ export const getTriggerLabel = (plan: PolicyPlan) => {
   if (plan.policyType === 0) {
     return `Delay > ${plan.delayThresholdHours ?? "N/A"} hours`;
   }
-
   if (plan.policyType === 1) {
     return "Flight cancelled";
   }
-
   return "Unknown trigger";
 };
