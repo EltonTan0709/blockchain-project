@@ -14,30 +14,10 @@ type HeaderMenuLink = {
   label: string;
   href: string;
   adminOnly?: boolean;
+  hideFromAdmin?: boolean;
 };
 
 const MENU_LINKS: HeaderMenuLink[] = [
-  {
-    label: "Home",
-    href: "/",
-  },
-  {
-    label: "Plans",
-    href: "/insurance-plans",
-  },
-  {
-    label: "Buy Policy",
-    href: "/buy-policy",
-  },
-  {
-    label: "My Policies",
-    href: "/my-policies",
-  },
-  {
-    label: "Pool",
-    href: "/pool",
-    adminOnly: true,
-  },
   {
     label: "Admin",
     href: "/admin",
@@ -48,12 +28,47 @@ const MENU_LINKS: HeaderMenuLink[] = [
     href: "/admin/flights",
     adminOnly: true,
   },
+  {
+    label: "Pool",
+    href: "/pool",
+    adminOnly: true,
+  },
+  {
+    label: "Home",
+    href: "/",
+    hideFromAdmin: true,
+  },
+  {
+    label: "Plans",
+    href: "/insurance-plans",
+    hideFromAdmin: true,
+  },
+  {
+    label: "Buy Policy",
+    href: "/buy-policy",
+    hideFromAdmin: true,
+  },
+  {
+    label: "My Policies",
+    href: "/my-policies",
+    hideFromAdmin: true,
+  },
 ];
 
 export const HeaderMenuLinks = () => {
   const pathname = usePathname();
   const { isAdmin } = useAdminWallet();
-  const visibleMenuLinks = MENU_LINKS.filter(link => !link.adminOnly || isAdmin);
+  const visibleMenuLinks = MENU_LINKS.filter(link => {
+    if (link.adminOnly && !isAdmin) {
+      return false;
+    }
+
+    if (link.hideFromAdmin && isAdmin) {
+      return false;
+    }
+
+    return true;
+  });
 
   return (
     <>

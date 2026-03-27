@@ -80,9 +80,9 @@ export type GenericContractsDeclaration = {
 };
 
 export const CONTRACTS = {
-  MockUSDC: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-  InsurancePool: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-  PolicyManager: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+  MockUSDC: "0xFA71294055CbAF8272269b3b875cBFFdCA382Bb6",
+  InsurancePool: "0xC6Cce21C3Dd70F8D94af389bdC4ac9d027fa9AdF",
+  PolicyManager: "0x9F75c70e8E22Bb6Fdc8b71e62F485EAD99A2Ebbb",
   TOKEN_DECIMALS: 6,
 } as const;
 

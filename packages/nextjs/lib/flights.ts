@@ -46,7 +46,12 @@ export const getFlightById = async (id: string): Promise<FlightRecord | null> =>
 // Flight number alone is not globally unique across dates, so this returns all matches.
 export const getFlightByFlightNumber = async (flightNumber: string): Promise<FlightRecord[]> => {
   return prisma.flight.findMany({
-    where: { flightNumber },
+    where: {
+      flightNumber: {
+        equals: flightNumber.trim(),
+        mode: "insensitive",
+      },
+    },
     include: flightWithStatusUpdatesInclude,
     orderBy: [
       {

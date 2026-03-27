@@ -4,6 +4,13 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { formatUnits, parseUnits } from "viem";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import {
+  ArrowLeftIcon,
+  BanknotesIcon,
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  ShieldCheckIcon,
+} from "@heroicons/react/24/solid";
 import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 
 const MOCK_USDC_ADDRESS = CONTRACTS.MockUSDC;
@@ -56,6 +63,10 @@ const insurancePoolAbi = [
     outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
+
+const formatTokenValue = (value?: bigint) => {
+  return value !== undefined ? `${formatUnits(value, TOKEN_DECIMALS)} USDC` : "-";
+};
 
 export default function DepositLiquidity() {
   const { address, isConnected } = useAccount();
@@ -174,79 +185,185 @@ export default function DepositLiquidity() {
     }
   };
 
+  const fundingChecklist = [
+    {
+      label: "Wallet connected",
+      detail: isConnected ? "Admin wallet is connected and ready." : "Connect the configured admin wallet first.",
+      done: isConnected,
+    },
+    {
+      label: "Valid amount entered",
+      detail: hasValidAmount ? `${amount} USDC prepared for deposit.` : "Enter the amount of USDC to fund the pool.",
+      done: hasValidAmount,
+    },
+    {
+      label: "Sufficient balance",
+      detail: hasEnoughBalance
+        ? "Wallet balance covers the deposit amount."
+        : "Wallet needs more MockUSDC for this deposit.",
+      done: hasEnoughBalance,
+    },
+    {
+      label: "Allowance approved",
+      detail: approvedEnough
+        ? "Pool contract already has enough allowance."
+        : "Approve the pool contract before depositing.",
+      done: approvedEnough,
+    },
+  ];
+
   return (
-    <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-base-300 bg-base-100 p-6 shadow">
-      <div className="mb-4">
-        <Link href="/admin" className="btn btn-outline btn-sm">
-          ← Back to Dashboard
-        </Link>
-      </div>
+    <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
+      <section className="relative overflow-hidden rounded-[2.5rem] border border-base-300 bg-base-100 shadow-2xl">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.12),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_30%)]" />
+        <div className="relative grid gap-8 px-8 py-8 lg:grid-cols-[minmax(0,1.15fr)_22rem] lg:items-end">
+          <div>
+            <Link href="/admin" className="btn btn-outline btn-sm rounded-full">
+              <ArrowLeftIcon className="h-4 w-4" />
+              Back to Dashboard
+            </Link>
 
-      <h1 className="text-3xl font-bold mb-6">Deposit Liquidity</h1>
+            <div className="mt-5 badge badge-outline border-secondary/30 bg-secondary/10 px-4 py-4 text-secondary">
+              Liquidity Pool
+            </div>
+            <h1 className="mt-5 text-4xl font-black tracking-tight md:text-5xl">Deposit Liquidity Into The Pool</h1>
+            <p className="mt-4 max-w-3xl text-lg leading-8 text-base-content/70">
+              Fund the insurance pool with MockUSDC so the demo has capital available for policy payouts and operational
+              testing.
+            </p>
+          </div>
 
-      <div className="space-y-2 mb-4">
-        <label className="text-sm font-medium">Amount</label>
-        <input
-          type="text"
-          value={amount}
-          onChange={e => setAmount(e.target.value)}
-          placeholder="1000"
-          className="input input-bordered w-full text-lg"
-        />
-      </div>
-
-      <div className="rounded-xl bg-base-200 p-4 space-y-2 text-sm mb-6">
-        <p>
-          <span className="font-semibold">Your USDC Balance:</span>{" "}
-          {balance !== undefined ? formatUnits(balance, TOKEN_DECIMALS) : "-"}
-        </p>
-        <p>
-          <span className="font-semibold">Allowance:</span>{" "}
-          {allowance !== undefined ? formatUnits(allowance, TOKEN_DECIMALS) : "-"}
-        </p>
-        <p>
-          <span className="font-semibold">Pool Balance:</span>{" "}
-          {poolBalance !== undefined ? formatUnits(poolBalance, TOKEN_DECIMALS) : "-"}
-        </p>
-      </div>
-
-      {!isConnected && (
-        <div className="alert alert-warning mb-4">
-          <span>Connect your wallet first.</span>
+          <div className="grid gap-4">
+            <div className="rounded-3xl border border-base-300 bg-base-100/90 p-5 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-primary/10 p-3 text-primary">
+                  <BanknotesIcon className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="text-sm uppercase tracking-[0.18em] text-base-content/45">Pool Balance</div>
+                  <div className="mt-1 text-2xl font-black">{formatTokenValue(poolBalance)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-3xl border border-base-300 bg-base-100/90 p-5 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-success/10 p-3 text-success">
+                  <ShieldCheckIcon className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="text-sm uppercase tracking-[0.18em] text-base-content/45">Wallet Balance</div>
+                  <div className="mt-1 text-2xl font-black">{formatTokenValue(balance)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
+      </section>
 
-      {hasValidAmount && !hasEnoughBalance && (
-        <div className="alert alert-error mb-4">
-          <span>Insufficient USDC balance for this amount.</span>
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+        <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
+          <h2 className="text-2xl font-bold">Fund The Pool</h2>
+          <p className="mt-2 text-sm leading-7 text-base-content/65">
+            Approve the pool contract to spend MockUSDC, then submit the deposit once allowance is ready.
+          </p>
+
+          <div className="mt-6 space-y-5">
+            <div>
+              <label className="mb-2 block text-sm font-medium">Deposit Amount (USDC)</label>
+              <input
+                type="text"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                placeholder="1000"
+                className="input input-bordered h-16 w-full rounded-2xl text-lg font-medium"
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl bg-base-200/70 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-base-content/45">Your USDC</div>
+                <div className="mt-2 text-xl font-bold">{formatTokenValue(balance)}</div>
+              </div>
+              <div className="rounded-2xl bg-base-200/70 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-base-content/45">Allowance</div>
+                <div className="mt-2 text-xl font-bold">{formatTokenValue(allowance)}</div>
+              </div>
+              <div className="rounded-2xl bg-base-200/70 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-base-content/45">Pool Total</div>
+                <div className="mt-2 text-xl font-bold">{formatTokenValue(poolBalance)}</div>
+              </div>
+            </div>
+
+            {!isConnected && (
+              <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
+                Connect your wallet first.
+              </div>
+            )}
+
+            {hasValidAmount && !hasEnoughBalance && (
+              <div className="rounded-2xl border border-error/30 bg-error/10 p-4 text-sm text-error">
+                Insufficient USDC balance for this amount.
+              </div>
+            )}
+
+            {hasValidAmount && !approvedEnough && isConnected && (
+              <div className="rounded-2xl border border-info/30 bg-info/10 p-4 text-sm text-info-content">
+                Step 1: Approve USDC. Step 2: Deposit liquidity into the pool.
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleApprove}
+                disabled={!isConnected || !hasValidAmount || !hasEnoughBalance || approving}
+                className="btn btn-primary h-14 rounded-2xl px-6"
+              >
+                {approving ? "Approving..." : "Approve USDC"}
+              </button>
+
+              <button
+                onClick={handleDeposit}
+                disabled={!isConnected || !hasValidAmount || !hasEnoughBalance || !approvedEnough || depositing}
+                className="btn btn-secondary h-14 rounded-2xl px-6"
+              >
+                {depositing ? "Depositing..." : "Deposit to Pool"}
+              </button>
+            </div>
+
+            {status && <div className="rounded-2xl bg-base-200 p-4 text-sm break-all">{status}</div>}
+          </div>
         </div>
-      )}
 
-      {hasValidAmount && !approvedEnough && isConnected && (
-        <div className="alert alert-info mb-4">
-          <span>Step 1: Approve USDC. Step 2: Deposit to Pool.</span>
+        <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
+          <h2 className="text-2xl font-bold">Funding Checklist</h2>
+          <div className="mt-5 space-y-3">
+            {fundingChecklist.map(item => (
+              <div
+                key={item.label}
+                className={`flex items-start gap-3 rounded-2xl border p-4 ${item.done ? "border-success/20 bg-success/10" : "border-base-300 bg-base-200/40"}`}
+              >
+                {item.done ? (
+                  <CheckCircleIcon className="mt-0.5 h-6 w-6 shrink-0 text-success" />
+                ) : (
+                  <ExclamationTriangleIcon className="mt-0.5 h-6 w-6 shrink-0 text-warning" />
+                )}
+                <div>
+                  <div className="font-semibold">{item.label}</div>
+                  <div className="mt-1 text-sm leading-6 text-base-content/65">{item.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-2xl bg-base-200/60 p-4 text-sm">
+            <div className="font-semibold">Operational note</div>
+            <div className="mt-2 leading-7 text-base-content/65">
+              Deposited liquidity increases the pool balance used by the demo insurance system. Approval is only needed
+              when your current allowance does not already cover the deposit amount.
+            </div>
+          </div>
         </div>
-      )}
-
-      <div className="flex flex-wrap gap-3">
-        <button
-          onClick={handleApprove}
-          disabled={!isConnected || !hasValidAmount || !hasEnoughBalance || approving}
-          className="btn btn-primary"
-        >
-          {approving ? "Approving..." : "Approve USDC"}
-        </button>
-
-        <button
-          onClick={handleDeposit}
-          disabled={!isConnected || !hasValidAmount || !hasEnoughBalance || !approvedEnough || depositing}
-          className="btn btn-secondary"
-        >
-          {depositing ? "Depositing..." : "Deposit to Pool"}
-        </button>
-      </div>
-
-      {status && <div className="mt-4 rounded-xl bg-base-200 p-3 text-sm break-all">{status}</div>}
+      </section>
     </div>
   );
 }
