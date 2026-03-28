@@ -101,6 +101,9 @@ export default function AdminDashboard() {
               <Link href="/admin/flights" className="btn btn-primary h-14 rounded-2xl px-6 text-base">
                 Manage Flights
               </Link>
+              <Link href="/admin/oracle" className="btn btn-outline btn-primary h-14 rounded-2xl px-6 text-base">
+                Oracle Ops
+              </Link>
               <Link href="/pool" className="btn btn-outline h-14 rounded-2xl px-6 text-base">
                 Manage Pool
               </Link>
@@ -207,15 +210,18 @@ export default function AdminDashboard() {
               </p>
             </Link>
 
-            <div className="rounded-3xl border border-base-300 bg-base-200/40 p-5 opacity-80">
-              <div className="flex items-center gap-3 text-base-content/60">
+            <Link
+              href="/admin/oracle"
+              className="rounded-3xl border border-base-300 bg-base-200/60 p-5 transition hover:-translate-y-1 hover:shadow-md"
+            >
+              <div className="flex items-center gap-3 text-primary">
                 <ClockIcon className="h-6 w-6" />
-                <div className="text-lg font-semibold">Policy Review</div>
+                <div className="text-lg font-semibold">Oracle Automation</div>
               </div>
-              <p className="mt-3 text-sm leading-7 text-base-content/60">
-                Reserved for the next iteration when policy-level admin review is added.
+              <p className="mt-3 text-sm leading-7 text-base-content/65">
+                Run Postgres-backed oracle checks and preview the payout decision before fulfillment.
               </p>
-            </div>
+            </Link>
 
             <div className="rounded-3xl border border-base-300 bg-base-200/40 p-5 opacity-80">
               <div className="flex items-center gap-3 text-base-content/60">

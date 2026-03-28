@@ -8,10 +8,11 @@ const deployPolicyManager: DeployFunction = async function (hre: HardhatRuntimeE
 
   const mockUSDC = await get("MockUSDC");
   const insurancePool = await get("InsurancePool");
+  const oracleCoordinator = await get("OracleCoordinator");
 
   const policyManager = await deploy("PolicyManager", {
     from: deployer,
-    args: [mockUSDC.address, insurancePool.address, deployer],
+    args: [mockUSDC.address, insurancePool.address, oracleCoordinator.address, deployer],
     log: true,
     autoMine: true,
   });
@@ -25,8 +26,16 @@ const deployPolicyManager: DeployFunction = async function (hre: HardhatRuntimeE
   await tx.wait();
 
   log(`InsurancePool policyManager set to ${policyManager.address}`);
+
+  const oracleCoordinatorContract = await ethers.getContractAt("OracleCoordinator", oracleCoordinator.address);
+  const oracleTx = await oracleCoordinatorContract.setPolicyManager(policyManager.address, {
+    gasLimit: 100000,
+  });
+  await oracleTx.wait();
+
+  log(`OracleCoordinator policyManager set to ${policyManager.address}`);
 };
 
 export default deployPolicyManager;
 deployPolicyManager.tags = ["PolicyManager"];
-deployPolicyManager.dependencies = ["MockUSDC", "InsurancePool"];
+deployPolicyManager.dependencies = ["MockUSDC", "InsurancePool", "OracleCoordinator"];

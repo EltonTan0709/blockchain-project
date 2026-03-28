@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatUnits, parseUnits } from "viem";
-import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import {
   CheckCircleIcon,
   ClockIcon,
@@ -14,6 +14,54 @@ import deployedContracts from "~~/contracts/deployedContracts";
 import { notification } from "~~/utils/scaffold-eth";
 import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 import { POLICY_PLANS, getPolicyTypeLabel, getTriggerLabel } from "~~/utils/scaffold-eth/policyPlans";
+
+const mockUsdcAbi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+const policyManagerAbi = [
+  {
+    type: "function",
+    name: "buyPolicy",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "flightNumber", type: "string" },
+      { name: "departureTimestamp", type: "uint256" },
+      { name: "policyType", type: "uint8" },
+      { name: "coverageAmount", type: "uint256" },
+      { name: "duration", type: "uint256" },
+      { name: "delayThresholdMinutes", type: "uint256" },
+      { name: "premium", type: "uint256" },
+    ],
+    outputs: [],
+  },
+] as const;
 
 const POLICY_TYPE_OPTIONS = [
   { label: "Flight Delay", value: 0 },
@@ -30,15 +78,14 @@ type FlightLookupResponse = {
   }>;
 };
 
-const formatDateTimeLocalValue = (value: string) => {
+const formatDateTimeUtcValue = (value: string) => {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "";
   }
 
-  const timezoneOffsetMs = date.getTimezoneOffset() * 60 * 1000;
-  return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 16);
+  return date.toISOString().slice(0, 16);
 };
 
 const getLookupTone = (message: string) => {
@@ -57,6 +104,13 @@ export const BuyPolicyForm = () => {
   const searchParams = useSearchParams();
   const { address, chain } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient({ chainId: chain?.id });
+  const chainId = chain?.id as keyof typeof deployedContracts | undefined;
+  const chainContracts = chainId
+    ? ((deployedContracts as Record<number, { MockUSDC?: { address: string }; PolicyManager?: { address: string } }>)[
+        Number(chainId)
+      ] ?? undefined)
+    : undefined;
 
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [flightNumber, setFlightNumber] = useState("");
@@ -64,6 +118,7 @@ export const BuyPolicyForm = () => {
   const [policyType, setPolicyType] = useState(0);
   const [coverageAmount, setCoverageAmount] = useState("100");
   const [durationHours, setDurationHours] = useState("24");
+  const [delayThresholdHours, setDelayThresholdHours] = useState("0");
   const [premium, setPremium] = useState("10");
   const [isApproving, setIsApproving] = useState(false);
   const [isBuying, setIsBuying] = useState(false);
@@ -71,14 +126,10 @@ export const BuyPolicyForm = () => {
   const [flightLookupMessage, setFlightLookupMessage] = useState("");
   const [debouncedFlightNumber, setDebouncedFlightNumber] = useState("");
 
-  const chainId = chain?.id as keyof typeof deployedContracts | undefined;
-  const contracts = chainId ? deployedContracts[chainId] : undefined;
-
-  const mockUSDCAbi = contracts?.MockUSDC?.abi;
-  const policyManagerAbi = contracts?.PolicyManager?.abi;
-
-  const MOCK_USDC_ADDRESS = CONTRACTS.MockUSDC as `0x${string}`;
-  const POLICY_MANAGER_ADDRESS = CONTRACTS.PolicyManager as `0x${string}`;
+  const MOCK_USDC_ADDRESS =
+    (chainContracts?.MockUSDC?.address as `0x${string}` | undefined) ?? (CONTRACTS.MockUSDC as `0x${string}`);
+  const POLICY_MANAGER_ADDRESS =
+    (chainContracts?.PolicyManager?.address as `0x${string}` | undefined) ?? (CONTRACTS.PolicyManager as `0x${string}`);
   const TOKEN_DECIMALS = CONTRACTS.TOKEN_DECIMALS;
 
   useEffect(() => {
@@ -87,6 +138,7 @@ export const BuyPolicyForm = () => {
     const coverageParam = searchParams.get("coverage");
     const premiumParam = searchParams.get("premium");
     const durationParam = searchParams.get("duration");
+    const delayThresholdParam = searchParams.get("delayThresholdHours");
 
     if (planIdParam) {
       setSelectedPlanId(planIdParam);
@@ -109,6 +161,10 @@ export const BuyPolicyForm = () => {
 
     if (durationParam !== null) {
       setDurationHours(durationParam);
+    }
+
+    if (delayThresholdParam !== null) {
+      setDelayThresholdHours(delayThresholdParam || "0");
     }
   }, [searchParams]);
 
@@ -180,10 +236,10 @@ export const BuyPolicyForm = () => {
                 new Date(left.scheduledDeparture).getTime() - new Date(right.scheduledDeparture).getTime(),
             )[0] ?? payload.data[0];
 
-        setDepartureDateTime(formatDateTimeLocalValue(upcomingFlight.scheduledDeparture));
+        setDepartureDateTime(formatDateTimeUtcValue(upcomingFlight.scheduledDeparture));
         setFlightLookupMessage(
           new Date(upcomingFlight.scheduledDeparture).getTime() >= now
-            ? "Departure date and time auto-filled from flight records."
+            ? "Departure date and time auto-filled from flight records in UTC."
             : "Latest matching flight found, but its departure time is already in the past.",
         );
       } catch (error) {
@@ -211,6 +267,23 @@ export const BuyPolicyForm = () => {
     if (!selectedPlanId) return null;
     return POLICY_PLANS.find(plan => plan.id === selectedPlanId) ?? null;
   }, [selectedPlanId]);
+
+  useEffect(() => {
+    if (!selectedPlan) {
+      return;
+    }
+
+    setPolicyType(selectedPlan.policyType);
+    setCoverageAmount(selectedPlan.coverage);
+    setDurationHours(selectedPlan.duration);
+    setPremium(selectedPlan.premium);
+
+    if (selectedPlan.policyType === 0) {
+      setDelayThresholdHours(currentValue => currentValue || selectedPlan.delayThresholdHours || "0");
+    } else {
+      setDelayThresholdHours("0");
+    }
+  }, [selectedPlan]);
 
   const departureTimestamp = useMemo(() => {
     if (!departureDateTime) return 0;
@@ -241,32 +314,39 @@ export const BuyPolicyForm = () => {
     return Math.floor(hours * HOURS_IN_SECONDS);
   }, [durationHours]);
 
+  const delayThresholdMinutesParsed = useMemo(() => {
+    const hours = Number(delayThresholdHours || "0");
+    if (!Number.isFinite(hours) || hours <= 0) return 0;
+    return Math.floor(hours * 60);
+  }, [delayThresholdHours]);
+
   const currentUnixTime = Math.floor(Date.now() / 1000);
 
-  const isAbiReady = !!mockUSDCAbi && !!policyManagerAbi;
+  const isAbiReady = !!chainContracts?.MockUSDC?.address && !!chainContracts?.PolicyManager?.address;
   const isFlightNumberValid = flightNumber.trim().length > 0;
   const isDepartureValid = departureTimestamp > currentUnixTime;
   const isCoverageValid = coverageAmountParsed !== undefined && Number(coverageAmount) > 0;
   const isPremiumValid = premiumParsed !== undefined && Number(premium) > 0;
   const isDurationValid = durationParsed > 0;
+  const isDelayThresholdValid = policyType === 1 || delayThresholdMinutesParsed > 0;
 
   const { data: usdcBalance, refetch: refetchUsdcBalance } = useReadContract({
     address: MOCK_USDC_ADDRESS,
-    abi: mockUSDCAbi,
+    abi: mockUsdcAbi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
     query: {
-      enabled: !!mockUSDCAbi && !!address,
+      enabled: !!address,
     },
   });
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: MOCK_USDC_ADDRESS,
-    abi: mockUSDCAbi,
+    abi: mockUsdcAbi,
     functionName: "allowance",
     args: address ? [address, POLICY_MANAGER_ADDRESS] : undefined,
     query: {
-      enabled: !!mockUSDCAbi && !!address,
+      enabled: !!address,
     },
   });
 
@@ -285,6 +365,7 @@ export const BuyPolicyForm = () => {
     isCoverageValid &&
     isPremiumValid &&
     isDurationValid &&
+    isDelayThresholdValid &&
     hasEnoughAllowance &&
     !isBuying;
 
@@ -317,6 +398,14 @@ export const BuyPolicyForm = () => {
       isComplete: isDurationValid,
     },
     {
+      label: "Delay trigger configured",
+      detail:
+        policyType === 0
+          ? `${delayThresholdHours || "0"} hours threshold selected`
+          : "Not required for cancellation cover.",
+      isComplete: isDelayThresholdValid,
+    },
+    {
       label: "Allowance approved",
       detail: hasEnoughAllowance ? "Wallet allowance covers the premium." : "Approve MockUSDC before purchase.",
       isComplete: hasEnoughAllowance,
@@ -342,17 +431,19 @@ export const BuyPolicyForm = () => {
       setPolicyType(selectedPlan.policyType);
       setCoverageAmount(selectedPlan.coverage);
       setDurationHours(selectedPlan.duration);
+      setDelayThresholdHours(selectedPlan.delayThresholdHours ?? "0");
       setPremium(selectedPlan.premium);
     } else {
       setPolicyType(0);
       setCoverageAmount("100");
       setDurationHours("24");
+      setDelayThresholdHours("0");
       setPremium("10");
     }
   };
 
   const handleApprove = async () => {
-    if (!mockUSDCAbi || !policyManagerAbi || !premiumParsed) {
+    if (!premiumParsed) {
       notification.error("Missing contract configuration or invalid premium.");
       return;
     }
@@ -360,12 +451,16 @@ export const BuyPolicyForm = () => {
     try {
       setIsApproving(true);
 
-      await writeContractAsync({
+      const txHash = await writeContractAsync({
         address: MOCK_USDC_ADDRESS,
-        abi: mockUSDCAbi,
+        abi: mockUsdcAbi,
         functionName: "approve",
         args: [POLICY_MANAGER_ADDRESS, premiumParsed],
       });
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
 
       await refreshTokenState();
       notification.success("USDC approved successfully.");
@@ -377,15 +472,20 @@ export const BuyPolicyForm = () => {
   };
 
   const handleBuyPolicy = async () => {
-    if (!policyManagerAbi || !coverageAmountParsed || !premiumParsed) {
+    if (!coverageAmountParsed || !premiumParsed) {
       notification.error("Missing contract configuration or invalid inputs.");
+      return;
+    }
+
+    if (!isDelayThresholdValid) {
+      notification.error("Delay plans require a valid delay threshold before purchase.");
       return;
     }
 
     try {
       setIsBuying(true);
 
-      await writeContractAsync({
+      const txHash = await writeContractAsync({
         address: POLICY_MANAGER_ADDRESS,
         abi: policyManagerAbi,
         functionName: "buyPolicy",
@@ -395,9 +495,14 @@ export const BuyPolicyForm = () => {
           policyType,
           coverageAmountParsed,
           BigInt(durationParsed),
+          BigInt(delayThresholdMinutesParsed),
           premiumParsed,
         ],
       });
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
 
       await refreshTokenState();
       resetForm();
@@ -500,7 +605,7 @@ export const BuyPolicyForm = () => {
                   className="input input-bordered w-full rounded-2xl bg-base-200 text-base-content/70 disabled:border-base-300 disabled:bg-base-200"
                 />
                 <div className="mt-2 text-xs text-base-content/60">
-                  This field is auto-filled from the flight record and locked for consistency.
+                  This field is auto-filled from the flight record in UTC and locked for consistency.
                 </div>
               </div>
 
@@ -550,6 +655,20 @@ export const BuyPolicyForm = () => {
                   className="input input-bordered w-full rounded-2xl bg-base-200"
                 />
               </div>
+
+              {policyType === 0 && (
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-medium">Delay Threshold (hours)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={delayThresholdHours}
+                    onChange={event => setDelayThresholdHours(event.target.value)}
+                    className="input input-bordered w-full rounded-2xl bg-base-200"
+                  />
+                </div>
+              )}
 
               {selectedPlan && (
                 <div className="md:col-span-2">

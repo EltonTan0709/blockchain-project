@@ -47,7 +47,7 @@ const InsurancePlansPage = () => {
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-4">
         {POLICY_PLANS.map((plan, index) => {
-          const href = `/buy-policy?planId=${encodeURIComponent(plan.id)}&policyType=${plan.policyType}&coverage=${plan.coverage}&premium=${plan.premium}&duration=${plan.duration}`;
+          const href = `/buy-policy?planId=${encodeURIComponent(plan.id)}&policyType=${plan.policyType}&coverage=${plan.coverage}&premium=${plan.premium}&duration=${plan.duration}&delayThresholdHours=${plan.delayThresholdHours ?? ""}`;
           const accent = getPlanAccentClasses(index);
 
           return (

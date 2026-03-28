@@ -15,6 +15,7 @@ type HeaderMenuLink = {
   href: string;
   adminOnly?: boolean;
   hideFromAdmin?: boolean;
+  exactMatch?: boolean;
 };
 
 const MENU_LINKS: HeaderMenuLink[] = [
@@ -22,10 +23,16 @@ const MENU_LINKS: HeaderMenuLink[] = [
     label: "Admin",
     href: "/admin",
     adminOnly: true,
+    exactMatch: true,
   },
   {
     label: "Manage Flights",
     href: "/admin/flights",
+    adminOnly: true,
+  },
+  {
+    label: "Oracle Ops",
+    href: "/admin/oracle",
     adminOnly: true,
   },
   {
@@ -41,11 +48,6 @@ const MENU_LINKS: HeaderMenuLink[] = [
   {
     label: "Plans",
     href: "/insurance-plans",
-    hideFromAdmin: true,
-  },
-  {
-    label: "Buy Policy",
-    href: "/buy-policy",
     hideFromAdmin: true,
   },
   {
@@ -72,8 +74,10 @@ export const HeaderMenuLinks = () => {
 
   return (
     <>
-      {visibleMenuLinks.map(({ label, href }) => {
-        const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+      {visibleMenuLinks.map(({ label, href, exactMatch }) => {
+        const isActive = exactMatch
+          ? pathname === href
+          : pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
         return (
           <li key={href}>
             <Link

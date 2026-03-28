@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 interface IInsurancePool {
     function receivePremium(address payer, uint256 amount) external;
+    function payOut(address recipient, uint256 amount) external;
 }
 
 contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
@@ -16,6 +17,7 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
 
     IERC20 public immutable stablecoin;
     address public insurancePool;
+    address public oracleCoordinator;
 
     uint256 public nextPolicyId;
 
@@ -42,6 +44,7 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         uint256 premium;
         uint256 coverageAmount;
         uint256 endTime;
+        uint256 delayThresholdMinutes;
         PolicyType policyType;
         PolicyStatus status;
     }
@@ -62,14 +65,30 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
     );
 
     event InsurancePoolUpdated(address indexed newPool);
+    event OracleCoordinatorUpdated(address indexed newCoordinator);
+    event PolicyResolved(
+        uint256 indexed policyId,
+        address indexed holder,
+        uint256 payoutAmount,
+        bool payoutExecuted,
+        uint8 oracleOutcome,
+        uint256 delayMinutes
+    );
 
-    constructor(address _stablecoin, address _insurancePool, address initialOwner) Ownable(initialOwner) {
+    constructor(
+        address _stablecoin,
+        address _insurancePool,
+        address _oracleCoordinator,
+        address initialOwner
+    ) Ownable(initialOwner) {
         require(_stablecoin != address(0), "Invalid stablecoin address");
         require(_insurancePool != address(0), "Invalid pool address");
+        require(_oracleCoordinator != address(0), "Invalid oracle coordinator");
         require(initialOwner != address(0), "Invalid owner");
 
         stablecoin = IERC20(_stablecoin);
         insurancePool = _insurancePool;
+        oracleCoordinator = _oracleCoordinator;
         nextPolicyId = 1;
     }
 
@@ -80,12 +99,20 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         emit InsurancePoolUpdated(_insurancePool);
     }
 
+    function setOracleCoordinator(address _oracleCoordinator) external onlyOwner {
+        require(_oracleCoordinator != address(0), "Invalid oracle coordinator");
+        oracleCoordinator = _oracleCoordinator;
+
+        emit OracleCoordinatorUpdated(_oracleCoordinator);
+    }
+
     function buyPolicy(
         string calldata flightNumber,
         uint256 departureTimestamp,
         uint8 policyType,
         uint256 coverageAmount,
         uint256 duration,
+        uint256 delayThresholdMinutes,
         uint256 premium
     ) external nonReentrant whenNotPaused {
         require(bytes(flightNumber).length > 0, "Flight number required");
@@ -94,6 +121,9 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         require(policyType <= uint8(PolicyType.FlightCancellation), "Invalid policy type");
         require(coverageAmount > 0, "Coverage must be > 0");
         require(duration > 0, "Duration must be > 0");
+        if (policyType == uint8(PolicyType.FlightDelay)) {
+            require(delayThresholdMinutes > 0, "Delay threshold required");
+        }
         require(premium > 0, "Premium must be > 0");
 
         uint256 policyId = nextPolicyId;
@@ -114,6 +144,7 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
             premium: premium,
             coverageAmount: coverageAmount,
             endTime: endTime,
+            delayThresholdMinutes: delayThresholdMinutes,
             policyType: PolicyType(policyType),
             status: PolicyStatus.Active
         });
@@ -140,6 +171,58 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
 
     function getUserPolicies(address user) external view returns (uint256[] memory) {
         return userPolicies[user];
+    }
+
+    function canRequestOracleCheck(uint256 policyId) external view returns (bool) {
+        Policy memory policy = policies[policyId];
+        return
+            oracleCoordinator != address(0) &&
+            policy.policyId != 0 &&
+            policy.status == PolicyStatus.Active &&
+            block.timestamp >= policy.departureTimestamp;
+    }
+
+    function resolvePolicyFromOracle(
+        uint256 policyId,
+        uint8 outcome,
+        uint256 delayMinutes
+    ) external nonReentrant whenNotPaused returns (bool payoutExecuted, uint256 payoutAmount) {
+        require(msg.sender == oracleCoordinator, "Not oracle coordinator");
+
+        Policy storage policy = policies[policyId];
+        require(policy.policyId != 0, "Policy not found");
+        require(policy.status == PolicyStatus.Active, "Policy not active");
+        require(block.timestamp >= policy.departureTimestamp, "Flight has not departed yet");
+
+        bool eligibleForPayout = _isEligibleForPayout(policy, outcome, delayMinutes);
+
+        if (!eligibleForPayout) {
+            policy.status = PolicyStatus.Expired;
+            emit PolicyResolved(policyId, policy.holder, 0, false, outcome, delayMinutes);
+            return (false, 0);
+        }
+
+        policy.status = PolicyStatus.PaidOut;
+        IInsurancePool(insurancePool).payOut(policy.holder, policy.coverageAmount);
+
+        emit PolicyResolved(policyId, policy.holder, policy.coverageAmount, true, outcome, delayMinutes);
+        return (true, policy.coverageAmount);
+    }
+
+    function getFlightKey(string memory flightNumber, uint256 departureTimestamp) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(flightNumber, departureTimestamp));
+    }
+
+    function _isEligibleForPayout(Policy memory policy, uint8 outcome, uint256 delayMinutes) internal pure returns (bool) {
+        if (policy.policyType == PolicyType.FlightDelay) {
+            return outcome == 2 && delayMinutes >= policy.delayThresholdMinutes;
+        }
+
+        if (policy.policyType == PolicyType.FlightCancellation) {
+            return outcome == 3;
+        }
+
+        return false;
     }
 
     function pause() external onlyOwner {

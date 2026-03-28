@@ -2,14 +2,18 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
 contract InsurancePool is Ownable, ReentrancyGuard, Pausable {
+    using SafeERC20 for IERC20;
+
     IERC20 public immutable stablecoin;
     uint256 public totalLiquidity;
     uint256 public totalPremiumsCollected;
+    uint256 public totalPayouts;
 
     address public policyManager;
 
@@ -18,6 +22,7 @@ contract InsurancePool is Ownable, ReentrancyGuard, Pausable {
     event LiquidityDeposited(address indexed provider, uint256 amount);
     event PolicyManagerSet(address indexed policyManager);
     event PremiumReceived(address indexed payer, uint256 amount);
+    event PayoutExecuted(address indexed recipient, uint256 amount);
 
     modifier onlyPolicyManager() {
         require(msg.sender == policyManager, "Not policy manager");
@@ -41,8 +46,7 @@ contract InsurancePool is Ownable, ReentrancyGuard, Pausable {
     function depositLiquidity(uint256 amount) external nonReentrant whenNotPaused {
         require(amount > 0, "Amount must be > 0");
 
-        bool success = stablecoin.transferFrom(msg.sender, address(this), amount);
-        require(success, "Transfer failed");
+        stablecoin.safeTransferFrom(msg.sender, address(this), amount);
 
         liquidityProvided[msg.sender] += amount;
         totalLiquidity += amount;
@@ -57,6 +61,17 @@ contract InsurancePool is Ownable, ReentrancyGuard, Pausable {
         totalPremiumsCollected += amount;
 
         emit PremiumReceived(payer, amount);
+    }
+
+    function payOut(address recipient, uint256 amount) external onlyPolicyManager nonReentrant whenNotPaused {
+        require(recipient != address(0), "Invalid recipient");
+        require(amount > 0, "Amount must be > 0");
+        require(stablecoin.balanceOf(address(this)) >= amount, "Insufficient pool balance");
+
+        totalPayouts += amount;
+        stablecoin.safeTransfer(recipient, amount);
+
+        emit PayoutExecuted(recipient, amount);
     }
 
     function pause() external onlyOwner {

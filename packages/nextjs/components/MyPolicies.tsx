@@ -12,6 +12,40 @@ import {
   getStatusBadgeClass,
 } from "~~/utils/scaffold-eth/policyStatus";
 
+const policyManagerAbi = [
+  {
+    type: "function",
+    name: "getUserPolicies",
+    stateMutability: "view",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint256[]" }],
+  },
+  {
+    type: "function",
+    name: "getPolicy",
+    stateMutability: "view",
+    inputs: [{ name: "policyId", type: "uint256" }],
+    outputs: [
+      {
+        type: "tuple",
+        components: [
+          { name: "policyId", type: "uint256" },
+          { name: "holder", type: "address" },
+          { name: "flightNumber", type: "string" },
+          { name: "purchaseTime", type: "uint256" },
+          { name: "departureTimestamp", type: "uint256" },
+          { name: "premium", type: "uint256" },
+          { name: "coverageAmount", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "delayThresholdMinutes", type: "uint256" },
+          { name: "policyType", type: "uint8" },
+          { name: "status", type: "uint8" },
+        ],
+      },
+    ],
+  },
+] as const;
+
 type PolicyStruct = {
   policyId: bigint;
   holder: `0x${string}`;
@@ -21,19 +55,21 @@ type PolicyStruct = {
   premium: bigint;
   coverageAmount: bigint;
   endTime: bigint;
+  delayThresholdMinutes: bigint;
   policyType: number;
   status: number;
 };
 
 export const MyPolicies = () => {
   const { address, chain, isConnected } = useAccount();
-
   const chainId = chain?.id as keyof typeof deployedContracts | undefined;
-  const contracts = chainId ? deployedContracts[chainId] : undefined;
+  const chainContracts = chainId
+    ? ((deployedContracts as Record<number, { PolicyManager?: { address: string } }>)[Number(chainId)] ?? undefined)
+    : undefined;
 
-  const policyManagerAbi = contracts?.PolicyManager?.abi;
   const TOKEN_DECIMALS = CONTRACTS.TOKEN_DECIMALS;
-  const POLICY_MANAGER_ADDRESS = CONTRACTS.PolicyManager as `0x${string}`;
+  const POLICY_MANAGER_ADDRESS =
+    (chainContracts?.PolicyManager?.address as `0x${string}` | undefined) ?? (CONTRACTS.PolicyManager as `0x${string}`);
 
   const {
     data: userPolicyIds,
@@ -45,7 +81,7 @@ export const MyPolicies = () => {
     functionName: "getUserPolicies",
     args: address ? [address] : undefined,
     query: {
-      enabled: !!policyManagerAbi && !!address,
+      enabled: !!address,
     },
   });
 
@@ -63,12 +99,12 @@ export const MyPolicies = () => {
       args: [policyId],
     })),
     query: {
-      enabled: !!policyManagerAbi && policyIds.length > 0,
+      enabled: policyIds.length > 0,
     },
   });
 
   const policies: PolicyStruct[] =
-    policiesData?.flatMap(item => {
+    (policiesData as any[] | undefined)?.flatMap(item => {
       if (item.status !== "success" || !item.result) return [];
       return [item.result as PolicyStruct];
     }) ?? [];
@@ -84,17 +120,6 @@ export const MyPolicies = () => {
         <div className="rounded-3xl border bg-base-100 p-8 shadow-xl">
           <h1 className="text-3xl font-bold">My Policies</h1>
           <p className="mt-3 text-base-content/70">Connect your wallet to view your purchased insurance policies.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!policyManagerAbi) {
-    return (
-      <div className="mx-auto max-w-5xl px-4 py-10">
-        <div className="rounded-3xl border bg-base-100 p-8 shadow-xl">
-          <h1 className="text-3xl font-bold">My Policies</h1>
-          <p className="mt-3 text-error">PolicyManager contract ABI is not loaded.</p>
         </div>
       </div>
     );
@@ -175,6 +200,12 @@ export const MyPolicies = () => {
                     <div>
                       <span className="font-semibold">Coverage Ends:</span> {formatUnixTimestamp(policy.endTime)}
                     </div>
+                    {policy.policyType === 0 ? (
+                      <div>
+                        <span className="font-semibold">Delay Threshold:</span>{" "}
+                        {Number(policy.delayThresholdMinutes) / 60} hours
+                      </div>
+                    ) : null}
                     <div>
                       <span className="font-semibold">On-chain Status:</span> {getContractStatusText(policy.status)}
                     </div>
