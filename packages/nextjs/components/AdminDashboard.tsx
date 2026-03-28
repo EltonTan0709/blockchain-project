@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { formatUnits } from "viem";
-import { useReadContract } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
 import {
   ArrowTrendingUpIcon,
   BanknotesIcon,
@@ -10,9 +10,9 @@ import {
   ClockIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/solid";
+import deployedContracts from "~~/contracts/deployedContracts";
 import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 
-const INSURANCE_POOL_ADDRESS = CONTRACTS.InsurancePool;
 const TOKEN_DECIMALS = CONTRACTS.TOKEN_DECIMALS;
 
 const insurancePoolAbi = [
@@ -63,23 +63,41 @@ function MetricCard({
 }
 
 export default function AdminDashboard() {
+  const { chain } = useAccount();
+  const chainId = chain?.id as keyof typeof deployedContracts | undefined;
+  const chainContracts = chainId
+    ? ((deployedContracts as Record<number, { InsurancePool?: { address: string } }>)[Number(chainId)] ?? undefined)
+    : undefined;
+  const insurancePoolAddress = chainContracts?.InsurancePool?.address as `0x${string}` | undefined;
+  const hasLivePoolAddress = !!insurancePoolAddress;
+
   const { data: poolBalance, isLoading: poolBalanceLoading } = useReadContract({
     abi: insurancePoolAbi,
-    address: INSURANCE_POOL_ADDRESS,
+    address: insurancePoolAddress,
     functionName: "getPoolBalance",
+    query: {
+      enabled: hasLivePoolAddress,
+    },
   });
 
   const { data: totalLiquidity, isLoading: totalLiquidityLoading } = useReadContract({
     abi: insurancePoolAbi,
-    address: INSURANCE_POOL_ADDRESS,
+    address: insurancePoolAddress,
     functionName: "totalLiquidity",
+    query: {
+      enabled: hasLivePoolAddress,
+    },
   });
 
-  const formattedPoolBalance =
-    poolBalanceLoading || poolBalance === undefined ? "Loading..." : `${formatUnits(poolBalance, TOKEN_DECIMALS)} USDC`;
+  const formattedPoolBalance = !hasLivePoolAddress
+    ? "Connect Sepolia"
+    : poolBalanceLoading || poolBalance === undefined
+      ? "Loading..."
+      : `${formatUnits(poolBalance, TOKEN_DECIMALS)} USDC`;
 
-  const formattedTotalLiquidity =
-    totalLiquidityLoading || totalLiquidity === undefined
+  const formattedTotalLiquidity = !hasLivePoolAddress
+    ? "Connect Sepolia"
+    : totalLiquidityLoading || totalLiquidity === undefined
       ? "Loading..."
       : `${formatUnits(totalLiquidity, TOKEN_DECIMALS)} USDC`;
 

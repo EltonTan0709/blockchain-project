@@ -88,6 +88,14 @@ const formatDateTimeUtcValue = (value: string) => {
   return date.toISOString().slice(0, 16);
 };
 
+const parseUtcDateTimeValue = (value: string) => {
+  if (!value) {
+    return Number.NaN;
+  }
+
+  return Date.parse(`${value}:00Z`);
+};
+
 const getLookupTone = (message: string) => {
   if (!message) {
     return "text-base-content/70";
@@ -287,7 +295,7 @@ export const BuyPolicyForm = () => {
 
   const departureTimestamp = useMemo(() => {
     if (!departureDateTime) return 0;
-    const ms = new Date(departureDateTime).getTime();
+    const ms = parseUtcDateTimeValue(departureDateTime);
     if (Number.isNaN(ms)) return 0;
     return Math.floor(ms / 1000);
   }, [departureDateTime]);

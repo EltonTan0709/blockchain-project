@@ -34,6 +34,20 @@ const deployPolicyManager: DeployFunction = async function (hre: HardhatRuntimeE
   await oracleTx.wait();
 
   log(`OracleCoordinator policyManager set to ${policyManager.address}`);
+
+  const automationTx = await oracleCoordinatorContract.setAutomationForwarder(deployer, {
+    gasLimit: 100000,
+  });
+  await automationTx.wait();
+
+  log(`OracleCoordinator automationForwarder set to ${deployer}`);
+
+  const reporterTx = await oracleCoordinatorContract.setReporter(deployer, true, {
+    gasLimit: 100000,
+  });
+  await reporterTx.wait();
+
+  log(`OracleCoordinator reporter set to ${deployer}`);
 };
 
 export default deployPolicyManager;

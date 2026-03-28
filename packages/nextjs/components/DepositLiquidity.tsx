@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { formatUnits, parseUnits } from "viem";
-import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import {
   ArrowLeftIcon,
   BanknotesIcon,
@@ -11,10 +11,9 @@ import {
   ExclamationTriangleIcon,
   ShieldCheckIcon,
 } from "@heroicons/react/24/solid";
+import deployedContracts from "~~/contracts/deployedContracts";
 import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 
-const MOCK_USDC_ADDRESS = CONTRACTS.MockUSDC;
-const INSURANCE_POOL_ADDRESS = CONTRACTS.InsurancePool;
 const TOKEN_DECIMALS = CONTRACTS.TOKEN_DECIMALS;
 
 const mockUsdcAbi = [
@@ -69,13 +68,24 @@ const formatTokenValue = (value?: bigint) => {
 };
 
 export default function DepositLiquidity() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient({ chainId: chain?.id });
+  const chainId = chain?.id as keyof typeof deployedContracts | undefined;
+  const chainContracts = chainId
+    ? ((deployedContracts as Record<number, { MockUSDC?: { address: string }; InsurancePool?: { address: string } }>)[
+        Number(chainId)
+      ] ?? undefined)
+    : undefined;
 
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState("");
   const [approving, setApproving] = useState(false);
   const [depositing, setDepositing] = useState(false);
+
+  const mockUsdcAddress = chainContracts?.MockUSDC?.address as `0x${string}` | undefined;
+  const insurancePoolAddress = chainContracts?.InsurancePool?.address as `0x${string}` | undefined;
+  const hasLiveAddresses = !!mockUsdcAddress && !!insurancePoolAddress;
 
   const parsedAmount = useMemo(() => {
     if (!amount.trim()) return 0n;
@@ -88,24 +98,25 @@ export default function DepositLiquidity() {
 
   const { data: balance, refetch: refetchBalance } = useReadContract({
     abi: mockUsdcAbi,
-    address: MOCK_USDC_ADDRESS,
+    address: mockUsdcAddress,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: !!address },
+    query: { enabled: !!address && hasLiveAddresses },
   });
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     abi: mockUsdcAbi,
-    address: MOCK_USDC_ADDRESS,
+    address: mockUsdcAddress,
     functionName: "allowance",
-    args: address ? [address, INSURANCE_POOL_ADDRESS] : undefined,
-    query: { enabled: !!address },
+    args: address && insurancePoolAddress ? [address, insurancePoolAddress] : undefined,
+    query: { enabled: !!address && hasLiveAddresses },
   });
 
   const { data: poolBalance, refetch: refetchPoolBalance } = useReadContract({
     abi: insurancePoolAbi,
-    address: INSURANCE_POOL_ADDRESS,
+    address: insurancePoolAddress,
     functionName: "getPoolBalance",
+    query: { enabled: hasLiveAddresses },
   });
 
   const approvedEnough = allowance !== undefined && allowance >= parsedAmount;
@@ -121,6 +132,10 @@ export default function DepositLiquidity() {
       setStatus("Connect your wallet first.");
       return;
     }
+    if (!hasLiveAddresses) {
+      setStatus("Connect to the deployed Sepolia network first.");
+      return;
+    }
     if (!hasValidAmount) {
       setStatus("Enter a valid amount.");
       return;
@@ -132,10 +147,14 @@ export default function DepositLiquidity() {
 
       const txHash = await writeContractAsync({
         abi: mockUsdcAbi,
-        address: MOCK_USDC_ADDRESS,
+        address: mockUsdcAddress,
         functionName: "approve",
-        args: [INSURANCE_POOL_ADDRESS, parsedAmount],
+        args: [insurancePoolAddress, parsedAmount],
       });
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
 
       setStatus(`Approval submitted: ${txHash}`);
       await refreshAll();
@@ -153,6 +172,10 @@ export default function DepositLiquidity() {
       setStatus("Connect your wallet first.");
       return;
     }
+    if (!hasLiveAddresses) {
+      setStatus("Connect to the deployed Sepolia network first.");
+      return;
+    }
     if (!hasValidAmount) {
       setStatus("Enter a valid amount.");
       return;
@@ -168,10 +191,14 @@ export default function DepositLiquidity() {
 
       const txHash = await writeContractAsync({
         abi: insurancePoolAbi,
-        address: INSURANCE_POOL_ADDRESS,
+        address: insurancePoolAddress,
         functionName: "depositLiquidity",
         args: [parsedAmount],
       });
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
 
       setStatus(`Deposit submitted: ${txHash}`);
       await refreshAll();
@@ -190,6 +217,13 @@ export default function DepositLiquidity() {
       label: "Wallet connected",
       detail: isConnected ? "Admin wallet is connected and ready." : "Connect the configured admin wallet first.",
       done: isConnected,
+    },
+    {
+      label: "Sepolia contracts loaded",
+      detail: hasLiveAddresses
+        ? "Live MockUSDC and InsurancePool addresses are loaded for this network."
+        : "Connect to Sepolia to load the deployed pool contracts.",
+      done: hasLiveAddresses,
     },
     {
       label: "Valid amount entered",
@@ -294,6 +328,23 @@ export default function DepositLiquidity() {
               </div>
             </div>
 
+            <div className="grid gap-4 rounded-2xl bg-base-200/50 p-4 text-sm">
+              <div className="break-all">
+                <div className="text-xs uppercase tracking-[0.16em] text-base-content/45">MockUSDC Address</div>
+                <div className="mt-2 font-mono">{mockUsdcAddress}</div>
+              </div>
+              <div className="break-all">
+                <div className="text-xs uppercase tracking-[0.16em] text-base-content/45">InsurancePool Address</div>
+                <div className="mt-2 font-mono">{insurancePoolAddress}</div>
+              </div>
+            </div>
+
+            {!hasLiveAddresses && (
+              <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
+                Connect to Sepolia so this page uses the live deployed MockUSDC and InsurancePool contracts.
+              </div>
+            )}
+
             {!isConnected && (
               <div className="rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
                 Connect your wallet first.
@@ -315,7 +366,7 @@ export default function DepositLiquidity() {
             <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleApprove}
-                disabled={!isConnected || !hasValidAmount || !hasEnoughBalance || approving}
+                disabled={!isConnected || !hasLiveAddresses || !hasValidAmount || !hasEnoughBalance || approving}
                 className="btn btn-primary h-14 rounded-2xl px-6"
               >
                 {approving ? "Approving..." : "Approve USDC"}
@@ -323,7 +374,14 @@ export default function DepositLiquidity() {
 
               <button
                 onClick={handleDeposit}
-                disabled={!isConnected || !hasValidAmount || !hasEnoughBalance || !approvedEnough || depositing}
+                disabled={
+                  !isConnected ||
+                  !hasLiveAddresses ||
+                  !hasValidAmount ||
+                  !hasEnoughBalance ||
+                  !approvedEnough ||
+                  depositing
+                }
                 className="btn btn-secondary h-14 rounded-2xl px-6"
               >
                 {depositing ? "Depositing..." : "Deposit to Pool"}
