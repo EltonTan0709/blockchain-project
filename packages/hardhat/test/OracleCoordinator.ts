@@ -1,5 +1,17 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { GAS_BENCHMARKS } from "../../nextjs/lib/performanceBenchmarks";
+
+const FIXED_GAS_PRICE = ethers.parseUnits("20", "gwei");
+
+const expectGasBudget = (gasUsed: bigint, budget: bigint, label: string) => {
+  expect(gasUsed, `${label} exceeded the gas budget of ${budget.toString()} units`).to.be.lessThan(budget);
+};
+
+const expectEthCostBudget = (gasUsed: bigint, maxCostWei: bigint, label: string) => {
+  const estimatedCostWei = gasUsed * FIXED_GAS_PRICE;
+  expect(estimatedCostWei, `${label} exceeded the fixed 20 gwei cost budget`).to.be.lessThan(maxCostWei);
+};
 
 describe("Oracle coordinator workflow", function () {
   async function deployFixture() {
@@ -133,5 +145,93 @@ describe("Oracle coordinator workflow", function () {
     await oracleCoordinator.connect(oracleReporter).fulfillOracleCheck(1, 3, 0);
 
     expect(await mockUSDC.balanceOf(traveler.address)).to.equal(travelerBalanceBefore + 300_000_000n);
+  });
+
+  it("keeps the core delayed-claim workflow within measurable gas and cost budgets", async function () {
+    const [owner, liquidityProvider, traveler, oracleReporter, automationForwarder] = await ethers.getSigners();
+
+    const mockUSDCFactory = (await ethers.getContractFactory("MockUSDC")) as any;
+    const mockUSDC = await mockUSDCFactory.deploy(owner.address);
+    await mockUSDC.waitForDeployment();
+
+    const insurancePoolFactory = (await ethers.getContractFactory("InsurancePool")) as any;
+    const insurancePool = await insurancePoolFactory.deploy(await mockUSDC.getAddress(), owner.address);
+    await insurancePool.waitForDeployment();
+
+    const oracleCoordinatorFactory = (await ethers.getContractFactory("OracleCoordinator")) as any;
+    const oracleCoordinator = await oracleCoordinatorFactory.deploy(owner.address);
+    await oracleCoordinator.waitForDeployment();
+
+    const policyManagerFactory = (await ethers.getContractFactory("PolicyManager")) as any;
+    const policyManager = (await policyManagerFactory.deploy(
+      await mockUSDC.getAddress(),
+      await insurancePool.getAddress(),
+      await oracleCoordinator.getAddress(),
+      owner.address,
+    )) as any;
+    await policyManager.waitForDeployment();
+
+    await insurancePool.setPolicyManager(await policyManager.getAddress());
+    await oracleCoordinator.setPolicyManager(await policyManager.getAddress());
+    await oracleCoordinator.setAutomationForwarder(automationForwarder.address);
+    await oracleCoordinator.setReporter(oracleReporter.address, true);
+
+    await mockUSDC.mint(liquidityProvider.address, 5_000);
+    await mockUSDC.mint(traveler.address, 500);
+
+    await mockUSDC.connect(liquidityProvider).approve(await insurancePool.getAddress(), 5_000_000_000);
+    const depositTx = await insurancePool.connect(liquidityProvider).depositLiquidity(5_000_000_000);
+    const depositReceipt = await depositTx.wait();
+
+    await mockUSDC.connect(traveler).approve(await policyManager.getAddress(), 500_000_000);
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const departureTimestamp = BigInt(latestBlock!.timestamp + 3600);
+
+    const buyPolicyTx = await policyManager
+      .connect(traveler)
+      .buyPolicy("SQ318", departureTimestamp, 0, 200_000_000, 24 * 3600, 360, 10_000_000);
+    const buyPolicyReceipt = await buyPolicyTx.wait();
+
+    await ethers.provider.send("evm_setNextBlockTimestamp", [Number(departureTimestamp + 5n)]);
+    await ethers.provider.send("evm_mine", []);
+
+    const performUpkeepTx = await oracleCoordinator
+      .connect(automationForwarder)
+      .performUpkeep(ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1n]));
+    const performUpkeepReceipt = await performUpkeepTx.wait();
+
+    const fulfillOracleCheckTx = await oracleCoordinator.connect(oracleReporter).fulfillOracleCheck(1, 2, 420);
+    const fulfillOracleCheckReceipt = await fulfillOracleCheckTx.wait();
+
+    expectGasBudget(depositReceipt!.gasUsed, BigInt(GAS_BENCHMARKS.depositLiquidity.gasBudget), "depositLiquidity");
+    expectGasBudget(buyPolicyReceipt!.gasUsed, BigInt(GAS_BENCHMARKS.buyPolicy.gasBudget), "buyPolicy");
+    expectGasBudget(performUpkeepReceipt!.gasUsed, BigInt(GAS_BENCHMARKS.oracleRequest.gasBudget), "performUpkeep");
+    expectGasBudget(
+      fulfillOracleCheckReceipt!.gasUsed,
+      BigInt(GAS_BENCHMARKS.oracleFulfillment.gasBudget),
+      "fulfillOracleCheck",
+    );
+
+    expectEthCostBudget(
+      depositReceipt!.gasUsed,
+      ethers.parseEther(GAS_BENCHMARKS.depositLiquidity.maxCostEthAt20Gwei.toFixed(4)),
+      "depositLiquidity",
+    );
+    expectEthCostBudget(
+      buyPolicyReceipt!.gasUsed,
+      ethers.parseEther(GAS_BENCHMARKS.buyPolicy.maxCostEthAt20Gwei.toFixed(4)),
+      "buyPolicy",
+    );
+    expectEthCostBudget(
+      performUpkeepReceipt!.gasUsed,
+      ethers.parseEther(GAS_BENCHMARKS.oracleRequest.maxCostEthAt20Gwei.toFixed(4)),
+      "performUpkeep",
+    );
+    expectEthCostBudget(
+      fulfillOracleCheckReceipt!.gasUsed,
+      ethers.parseEther(GAS_BENCHMARKS.oracleFulfillment.maxCostEthAt20Gwei.toFixed(4)),
+      "fulfillOracleCheck",
+    );
   });
 });
