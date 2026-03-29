@@ -1,336 +1,205 @@
 "use client";
 
-import { useState } from "react";
-import { encodeAbiParameters } from "viem";
-import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
-import deployedContracts from "~~/contracts/deployedContracts";
-import { notification } from "~~/utils/scaffold-eth";
+import { useEffect, useMemo, useState } from "react";
 
-const oracleCoordinatorAbi = [
-  {
-    type: "function",
-    name: "performUpkeep",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "performData", type: "bytes" }],
-    outputs: [],
-  },
-  {
-    type: "function",
-    name: "fulfillOracleCheck",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "policyId", type: "uint256" },
-      { name: "outcome", type: "uint8" },
-      { name: "delayMinutes", type: "uint256" },
-    ],
-    outputs: [],
-  },
-  {
-    type: "function",
-    name: "setReporter",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "reporter", type: "address" },
-      { name: "isAuthorized", type: "bool" },
-    ],
-    outputs: [],
-  },
-  {
-    type: "function",
-    name: "reporters",
-    stateMutability: "view",
-    inputs: [{ name: "reporter", type: "address" }],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "owner",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-  },
-  {
-    type: "function",
-    name: "automationForwarder",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-  },
-  {
-    type: "function",
-    name: "requestsByPolicyId",
-    stateMutability: "view",
-    inputs: [{ name: "policyId", type: "uint256" }],
-    outputs: [
-      {
-        type: "tuple",
-        components: [
-          { name: "requestId", type: "uint256" },
-          { name: "policyId", type: "uint256" },
-          { name: "requestedAt", type: "uint256" },
-          { name: "fulfilledAt", type: "uint256" },
-          { name: "pending", type: "bool" },
-          { name: "fulfilled", type: "bool" },
-          { name: "outcome", type: "uint8" },
-          { name: "delayMinutes", type: "uint256" },
-          { name: "payoutExecuted", type: "bool" },
-          { name: "payoutAmount", type: "uint256" },
-        ],
-      },
-    ],
-  },
-] as const;
-
-type OracleRequestState = {
-  requestId: bigint;
-  policyId: bigint;
-  requestedAt: bigint;
-  fulfilledAt: bigint;
-  pending: boolean;
-  fulfilled: boolean;
-  outcome: number;
-  delayMinutes: bigint;
-  payoutExecuted: boolean;
-  payoutAmount: bigint;
+type OracleAuditMetadata = {
+  sources?: Array<{
+    sourceId: string;
+    sourceLabel: string;
+    outcome: number;
+    delayMinutes: number;
+    payoutEligible: boolean;
+    reason: string;
+  }>;
+  reason?: string;
+  winningVotes?: number;
+  totalVotes?: number;
+  oracleReadyTimestamp?: string;
+  requestTransactionHash?: string;
+  callbackTransactionHash?: string;
+  workerMode?: string;
+  retryCount?: number;
 };
 
-type OracleDecisionResponse = {
+type OracleAuditRecord = {
+  id: string;
+  chainId: number;
+  policyId: string;
+  requestId: string | null;
+  chainlinkRequestId: string | null;
+  auditStatus: "REQUESTED" | "AWAITING_CHAINLINK" | "FULFILLED" | "FAILED" | "EXPIRED";
+  usedChainlink: boolean;
+  flightNumber: string | null;
+  flightStatus: string | null;
+  latestNote: string | null;
+  outcome: number | null;
+  delayMinutes: number | null;
+  payoutEligible: boolean | null;
+  payoutExecuted: boolean | null;
+  payoutAmount: string | null;
+  transactionHash: string | null;
+  errorMessage: string | null;
+  metadata: OracleAuditMetadata | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type OracleHistoryResponse = {
   data: {
-    policy: {
-      policyId: string;
-      flightNumber: string;
-      departureTimestamp: string;
-      policyType: number;
-      status: number;
-      delayThresholdMinutes: string;
-    };
-    flight: {
-      id: string;
-      flightNumber: string;
-      currentStatus: string;
-      scheduledDeparture: string;
-      latestNote: string | null;
-    };
-    oracle: {
-      outcome: number;
-      delayMinutes: number;
-      payoutEligible: boolean;
-      reason: string;
-    };
+    audits: OracleAuditRecord[];
+    summary: Record<OracleAuditRecord["auditStatus"], number>;
+    generatedAt: string;
   };
+};
+
+type OracleDisplayStatus = "Pending Callback" | "Paid Out" | "No Payout" | "Failed" | "Expired";
+
+const HISTORY_REFRESH_INTERVAL_MS = 10_000;
+
+const getOutcomeLabel = (outcome: number | null | undefined) => {
+  switch (outcome) {
+    case 1:
+      return "On Time";
+    case 2:
+      return "Delayed";
+    case 3:
+      return "Cancelled";
+    default:
+      return "Unknown";
+  }
+};
+
+const getDisplayStatus = (audit: OracleAuditRecord): OracleDisplayStatus => {
+  switch (audit.auditStatus) {
+    case "FULFILLED":
+      return audit.payoutExecuted ? "Paid Out" : "No Payout";
+    case "FAILED":
+      return "Failed";
+    case "EXPIRED":
+      return "Expired";
+    case "AWAITING_CHAINLINK":
+    case "REQUESTED":
+    default:
+      return "Pending Callback";
+  }
+};
+
+const getDisplayTone = (displayStatus: OracleDisplayStatus) => {
+  switch (displayStatus) {
+    case "Paid Out":
+      return "badge-success";
+    case "No Payout":
+      return "badge-neutral";
+    case "Failed":
+      return "badge-error";
+    case "Expired":
+      return "badge-warning";
+    case "Pending Callback":
+    default:
+      return "badge-info";
+  }
+};
+
+const SummaryCard = ({ label, value }: { label: string; value: number }) => {
+  return (
+    <div className="rounded-3xl border border-base-300 bg-base-100 p-5 shadow-sm">
+      <div className="text-xs uppercase tracking-[0.18em] text-base-content/45">{label}</div>
+      <div className="mt-3 text-3xl font-black">{value}</div>
+    </div>
+  );
 };
 
 export const OracleAutomationPanel = () => {
-  const { address, chain } = useAccount();
-  const { writeContractAsync } = useWriteContract();
-  const publicClient = usePublicClient({ chainId: chain?.id });
-  const chainId = chain?.id as keyof typeof deployedContracts | undefined;
-  const chainContracts = chainId
-    ? ((deployedContracts as Record<number, { OracleCoordinator?: { address: string } }>)[Number(chainId)] ?? undefined)
-    : undefined;
-  const oracleCoordinatorAddress = chainContracts?.OracleCoordinator?.address as `0x${string}` | undefined;
-
-  const [policyId, setPolicyId] = useState("1");
-  const [loading, setLoading] = useState(false);
-  const [processingPayout, setProcessingPayout] = useState(false);
+  const [audits, setAudits] = useState<OracleAuditRecord[]>([]);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [decision, setDecision] = useState<OracleDecisionResponse["data"] | null>(null);
 
-  const parsedPolicyId = policyId.trim() && /^\d+$/.test(policyId.trim()) ? BigInt(policyId.trim()) : undefined;
+  useEffect(() => {
+    let isCancelled = false;
 
-  const { data: isReporter, refetch: refetchReporter } = useReadContract({
-    address: oracleCoordinatorAddress,
-    abi: oracleCoordinatorAbi,
-    functionName: "reporters",
-    args: address ? [address] : undefined,
-    query: {
-      enabled: !!oracleCoordinatorAddress && !!address,
-    },
-  });
+    const loadHistory = async () => {
+      try {
+        const response = await fetch("/api/admin/oracle/history?limit=30", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as OracleHistoryResponse | { error?: string };
 
-  const { data: coordinatorOwner } = useReadContract({
-    address: oracleCoordinatorAddress,
-    abi: oracleCoordinatorAbi,
-    functionName: "owner",
-    query: {
-      enabled: !!oracleCoordinatorAddress,
-    },
-  });
+        if (!response.ok || !("data" in payload)) {
+          throw new Error("error" in payload ? payload.error : "Failed to load oracle history.");
+        }
 
-  const { data: automationForwarder } = useReadContract({
-    address: oracleCoordinatorAddress,
-    abi: oracleCoordinatorAbi,
-    functionName: "automationForwarder",
-    query: {
-      enabled: !!oracleCoordinatorAddress,
-    },
-  });
-
-  const { data: requestState, refetch: refetchRequestState } = useReadContract({
-    address: oracleCoordinatorAddress,
-    abi: oracleCoordinatorAbi,
-    functionName: "requestsByPolicyId",
-    args: parsedPolicyId ? [parsedPolicyId] : undefined,
-    query: {
-      enabled: !!oracleCoordinatorAddress && !!parsedPolicyId,
-    },
-  });
-
-  const isAutomationAuthorized =
-    !!address &&
-    (!!coordinatorOwner && coordinatorOwner.toLowerCase() === address.toLowerCase()
-      ? true
-      : !!automationForwarder && automationForwarder.toLowerCase() === address.toLowerCase());
-
-  const canSelfAuthorizeReporter =
-    !!address && !!coordinatorOwner && coordinatorOwner.toLowerCase() === address.toLowerCase();
-
-  const handleEvaluate = async () => {
-    if (!parsedPolicyId) {
-      setDecision(null);
-      setError("Enter a valid numeric policy ID.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch(`/api/oracle/policies/${parsedPolicyId.toString()}`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as OracleDecisionResponse | { error?: string };
-
-      if (!response.ok || !("data" in payload)) {
-        throw new Error("error" in payload ? payload.error : "Failed to evaluate policy");
-      }
-
-      setDecision(payload.data);
-    } catch (caughtError) {
-      setDecision(null);
-      setError(caughtError instanceof Error ? caughtError.message : "Failed to evaluate policy");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleProcessPayout = async () => {
-    if (!decision || !oracleCoordinatorAddress || !parsedPolicyId) {
-      notification.error("Load an oracle decision first.");
-      return;
-    }
-
-    if (!address || !publicClient) {
-      notification.error("Connect the admin wallet first.");
-      return;
-    }
-
-    if (!isAutomationAuthorized) {
-      notification.error("Connected wallet is not authorized to perform oracle upkeep.");
-      return;
-    }
-
-    try {
-      setProcessingPayout(true);
-
-      if (!isReporter) {
-        if (!canSelfAuthorizeReporter) {
-          notification.error("Connected wallet is not authorized to add itself as an oracle reporter.");
+        if (isCancelled) {
           return;
         }
 
-        const reporterTxHash = await writeContractAsync({
-          address: oracleCoordinatorAddress,
-          abi: oracleCoordinatorAbi,
-          functionName: "setReporter",
-          args: [address, true],
-        });
-        await publicClient.waitForTransactionReceipt({ hash: reporterTxHash });
-        await refetchReporter();
+        setAudits(payload.data.audits);
+        setGeneratedAt(payload.data.generatedAt);
+        setSelectedAuditId(currentSelectedAuditId => currentSelectedAuditId ?? payload.data.audits[0]?.id ?? null);
+        setError("");
+      } catch (caughtError) {
+        if (!isCancelled) {
+          setError(caughtError instanceof Error ? caughtError.message : "Failed to load oracle history.");
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
       }
+    };
 
-      const currentRequest = requestState as OracleRequestState | undefined;
-      if (!currentRequest?.pending && !currentRequest?.fulfilled) {
-        const performData = encodeAbiParameters([{ type: "uint256" }], [parsedPolicyId]);
-        const upkeepTxHash = await writeContractAsync({
-          address: oracleCoordinatorAddress,
-          abi: oracleCoordinatorAbi,
-          functionName: "performUpkeep",
-          args: [performData],
-        });
-        await publicClient.waitForTransactionReceipt({ hash: upkeepTxHash });
-        await refetchRequestState();
-      }
+    void loadHistory();
 
-      const fulfillTxHash = await writeContractAsync({
-        address: oracleCoordinatorAddress,
-        abi: oracleCoordinatorAbi,
-        functionName: "fulfillOracleCheck",
-        args: [parsedPolicyId, decision.oracle.outcome, BigInt(decision.oracle.delayMinutes)],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: fulfillTxHash });
+    const intervalId = window.setInterval(() => {
+      void loadHistory();
+    }, HISTORY_REFRESH_INTERVAL_MS);
 
-      await Promise.all([refetchRequestState(), handleEvaluate()]);
-      notification.success("Oracle fulfillment submitted and payout flow processed.");
-    } catch (caughtError: any) {
-      notification.error(caughtError?.shortMessage || caughtError?.message || "Failed to process payout.");
-    } finally {
-      setProcessingPayout(false);
-    }
-  };
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const selectedAudit = useMemo(
+    () => audits.find(audit => audit.id === selectedAuditId) ?? audits[0] ?? null,
+    [audits, selectedAuditId],
+  );
+
+  const displaySummary = useMemo(() => {
+    return audits.reduce<Record<OracleDisplayStatus, number>>(
+      (summary, audit) => {
+        summary[getDisplayStatus(audit)] += 1;
+        return summary;
+      },
+      {
+        "Pending Callback": 0,
+        "Paid Out": 0,
+        "No Payout": 0,
+        Failed: 0,
+        Expired: 0,
+      },
+    );
+  }, [audits]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
+    <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
       <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
-        <h1 className="text-3xl font-bold">Oracle Automation Mock</h1>
-        <p className="mt-3 max-w-3xl text-base-content/70">
-          This screen simulates the Postgres-to-oracle decision step after policy purchase. It reads the on-chain
-          policy, checks the flight status stored in Postgres, and shows the payout decision that the oracle should
-          fulfill.
+        <h1 className="text-3xl font-bold">Oracle Operations</h1>
+        <p className="mt-3 max-w-4xl text-base-content/70">
+          This page keeps the oracle decision history concise: final result, supporting vote snapshot, and proof of
+          whether the run used Chainlink Functions or the local simulated path.
         </p>
-
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <input
-            type="number"
-            min="1"
-            value={policyId}
-            onChange={event => setPolicyId(event.target.value)}
-            className="input input-bordered w-full rounded-2xl sm:max-w-xs"
-            placeholder="Policy ID"
-          />
-          <button className="btn btn-primary rounded-2xl" onClick={() => void handleEvaluate()} disabled={loading}>
-            {loading ? "Evaluating..." : "Run Mock Oracle Check"}
-          </button>
-          <button
-            className="btn btn-secondary rounded-2xl"
-            onClick={() => void handleProcessPayout()}
-            disabled={!decision || processingPayout || !oracleCoordinatorAddress || !parsedPolicyId}
-          >
-            {processingPayout ? "Processing..." : "Process On-Chain Payout"}
-          </button>
+        <div className="mt-4 text-xs text-base-content/55">
+          Last history refresh: {generatedAt ? new Date(generatedAt).toLocaleString() : "Loading..."}
         </div>
+      </div>
 
-        {oracleCoordinatorAddress ? (
-          <div className="mt-4 text-xs text-base-content/60">
-            OracleCoordinator: <span className="font-mono">{oracleCoordinatorAddress}</span>
-          </div>
-        ) : (
-          <div className="mt-4 text-xs text-warning">
-            OracleCoordinator deployment not found for the connected chain.
-          </div>
-        )}
-
-        {oracleCoordinatorAddress ? (
-          <div className="mt-2 text-xs text-base-content/60">
-            Coordinator owner: <span className="font-mono">{coordinatorOwner ?? "Loading..."}</span>
-          </div>
-        ) : null}
-
-        {oracleCoordinatorAddress ? (
-          <div className="mt-2 text-xs text-base-content/60">
-            Automation forwarder: <span className="font-mono">{automationForwarder ?? "Not set"}</span>
-          </div>
-        ) : null}
+      <div className="grid gap-4 md:grid-cols-4">
+        <SummaryCard label="Pending Callback" value={displaySummary["Pending Callback"]} />
+        <SummaryCard label="Paid Out" value={displaySummary["Paid Out"]} />
+        <SummaryCard label="No Payout" value={displaySummary["No Payout"]} />
+        <SummaryCard label="Failed" value={displaySummary.Failed} />
       </div>
 
       {error ? (
@@ -339,95 +208,155 @@ export const OracleAutomationPanel = () => {
         </div>
       ) : null}
 
-      {decision ? (
-        <div className="grid gap-6 lg:grid-cols-4">
+      {isLoading ? (
+        <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-sm text-base-content/60">
+          Loading oracle history...
+        </div>
+      ) : null}
+
+      {!isLoading && audits.length === 0 ? (
+        <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-sm text-base-content/60">
+          No oracle audit records yet. Once the worker processes a due policy, history will appear here.
+        </div>
+      ) : null}
+
+      {audits.length > 0 ? (
+        <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
           <div className="rounded-3xl border border-base-300 bg-base-100 p-5 shadow-sm">
-            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-base-content/50">Policy</div>
-            <div className="mt-4 space-y-2 text-sm">
-              <div>
-                <span className="font-semibold">Policy ID:</span> {decision.policy.policyId}
-              </div>
-              <div>
-                <span className="font-semibold">Flight:</span> {decision.policy.flightNumber}
-              </div>
-              <div>
-                <span className="font-semibold">Policy Type:</span>{" "}
-                {decision.policy.policyType === 0 ? "Flight Delay" : "Flight Cancellation"}
-              </div>
-              <div>
-                <span className="font-semibold">Delay Threshold:</span>{" "}
-                {Number(decision.policy.delayThresholdMinutes) / 60} hours
-              </div>
+            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-base-content/45">Recent History</div>
+            <div className="mt-4 space-y-3">
+              {audits.map(audit => {
+                const displayStatus = getDisplayStatus(audit);
+
+                return (
+                  <button
+                    key={audit.id}
+                    type="button"
+                    onClick={() => setSelectedAuditId(audit.id)}
+                    className={`w-full rounded-2xl border p-4 text-left transition ${
+                      audit.id === selectedAudit?.id
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-base-300/70 bg-base-200/30 hover:border-primary/20"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-lg font-semibold">
+                          Policy #{audit.policyId}
+                          {audit.flightNumber ? ` · ${audit.flightNumber}` : ""}
+                        </div>
+                        <div className="mt-1 text-sm text-base-content/60">
+                          Updated {new Date(audit.updatedAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className={`badge ${getDisplayTone(displayStatus)}`}>{displayStatus}</div>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-base-content/70 sm:grid-cols-3">
+                      <div>Outcome: {getOutcomeLabel(audit.outcome)}</div>
+                      <div>Delay: {audit.delayMinutes ?? 0} min</div>
+                      <div>
+                        Payout: {audit.payoutExecuted ? "Paid out" : audit.payoutEligible ? "Eligible" : "No payout"}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div className="rounded-3xl border border-base-300 bg-base-100 p-5 shadow-sm">
-            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-base-content/50">
-              Postgres Flight
-            </div>
-            <div className="mt-4 space-y-2 text-sm">
-              <div>
-                <span className="font-semibold">Status:</span> {decision.flight.currentStatus}
-              </div>
-              <div>
-                <span className="font-semibold">Scheduled Departure:</span>{" "}
-                {new Date(decision.flight.scheduledDeparture).toLocaleString()}
-              </div>
-              <div>
-                <span className="font-semibold">Latest Note:</span> {decision.flight.latestNote ?? "No note"}
-              </div>
-            </div>
-          </div>
+            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-base-content/45">Audit Detail</div>
 
-          <div className="rounded-3xl border border-base-300 bg-base-100 p-5 shadow-sm">
-            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-base-content/50">
-              Oracle Decision
-            </div>
-            <div className="mt-4 space-y-2 text-sm">
-              <div>
-                <span className="font-semibold">Outcome Code:</span> {decision.oracle.outcome}
-              </div>
-              <div>
-                <span className="font-semibold">Delay Minutes:</span> {decision.oracle.delayMinutes}
-              </div>
-              <div>
-                <span className="font-semibold">Payout:</span>{" "}
-                {decision.oracle.payoutEligible ? "Eligible" : "Not eligible"}
-              </div>
-              <div>
-                <span className="font-semibold">Reason:</span> {decision.oracle.reason}
-              </div>
-            </div>
-          </div>
+            {selectedAudit ? (
+              <div className="mt-4 space-y-5 text-sm">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <span className="font-semibold">Decision Status:</span>{" "}
+                    <span className={`badge ${getDisplayTone(getDisplayStatus(selectedAudit))}`}>
+                      {getDisplayStatus(selectedAudit)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold">Policy ID:</span> {selectedAudit.policyId}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Flight:</span> {selectedAudit.flightNumber ?? "Unknown"}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Flight Status:</span> {selectedAudit.flightStatus ?? "Unknown"}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Outcome:</span> {getOutcomeLabel(selectedAudit.outcome)}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Delay Minutes:</span> {selectedAudit.delayMinutes ?? 0}
+                  </div>
+                  {selectedAudit.payoutExecuted || selectedAudit.payoutAmount !== "0" ? (
+                    <div>
+                      <span className="font-semibold">Payout Amount:</span> {selectedAudit.payoutAmount ?? "0"} USDC
+                    </div>
+                  ) : null}
+                </div>
 
-          <div className="rounded-3xl border border-base-300 bg-base-100 p-5 shadow-sm">
-            <div className="text-sm font-semibold uppercase tracking-[0.18em] text-base-content/50">
-              On-Chain Request
-            </div>
-            <div className="mt-4 space-y-2 text-sm">
-              <div>
-                <span className="font-semibold">Reporter Authorized:</span> {isReporter ? "Yes" : "No"}
+                <div className="rounded-2xl border border-base-300/70 bg-base-200/30 p-4 text-base-content/70">
+                  <div className="text-xs uppercase tracking-[0.18em] text-base-content/45">Oracle Proof</div>
+                  <div className="mt-3 space-y-2">
+                    <div>
+                      <span className="font-semibold">Execution Mode:</span>{" "}
+                      {selectedAudit.usedChainlink ? "Chainlink Functions" : "Simulated consensus"}
+                    </div>
+                    <div>
+                      <span className="font-semibold">Vote:</span> {selectedAudit.metadata?.winningVotes ?? 0}/
+                      {selectedAudit.metadata?.totalVotes ?? 0}
+                    </div>
+                    {selectedAudit.chainlinkRequestId ? (
+                      <div className="break-all">
+                        <span className="font-semibold">Chainlink Request ID:</span> {selectedAudit.chainlinkRequestId}
+                      </div>
+                    ) : null}
+                    <div>
+                      <span className="font-semibold">Reason:</span>{" "}
+                      {selectedAudit.metadata?.reason ?? "No reason stored"}
+                    </div>
+                  </div>
+                </div>
+
+                {selectedAudit.latestNote ? (
+                  <div className="rounded-2xl border border-base-300/70 bg-base-200/30 p-4 text-base-content/70">
+                    <div className="text-xs uppercase tracking-[0.18em] text-base-content/45">Latest Note</div>
+                    <div className="mt-2">{selectedAudit.latestNote}</div>
+                  </div>
+                ) : null}
+
+                {selectedAudit.metadata?.sources?.length ? (
+                  <div className="space-y-3">
+                    <div className="text-xs uppercase tracking-[0.18em] text-base-content/45">Source Vote Snapshot</div>
+                    {selectedAudit.metadata.sources.map(source => (
+                      <div key={source.sourceId} className="rounded-2xl border border-base-300/70 bg-base-200/30 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold">{source.sourceLabel}</div>
+                          <div className="badge badge-outline">{getOutcomeLabel(source.outcome)}</div>
+                        </div>
+                        <div className="mt-2 text-base-content/70">Delay: {source.delayMinutes} minutes</div>
+                        <div className="mt-1 text-base-content/70">
+                          Payout: {source.payoutEligible ? "Eligible" : "Not eligible"}
+                        </div>
+                        <div className="mt-2 text-xs leading-5 text-base-content/60">{source.reason}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {selectedAudit.errorMessage ? (
+                  <div className="rounded-2xl border border-error/20 bg-error/5 p-4 text-error">
+                    <div className="font-semibold">Worker Error</div>
+                    <div className="mt-2 text-sm">{selectedAudit.errorMessage}</div>
+                  </div>
+                ) : null}
               </div>
-              <div>
-                <span className="font-semibold">Can Trigger Upkeep:</span> {isAutomationAuthorized ? "Yes" : "No"}
-              </div>
-              <div>
-                <span className="font-semibold">Request Pending:</span>{" "}
-                {(requestState as OracleRequestState | undefined)?.pending ? "Yes" : "No"}
-              </div>
-              <div>
-                <span className="font-semibold">Request Fulfilled:</span>{" "}
-                {(requestState as OracleRequestState | undefined)?.fulfilled ? "Yes" : "No"}
-              </div>
-              <div>
-                <span className="font-semibold">Payout Executed:</span>{" "}
-                {(requestState as OracleRequestState | undefined)?.payoutExecuted ? "Yes" : "No"}
-              </div>
-              <div>
-                <span className="font-semibold">Payout Amount:</span>{" "}
-                {Number((requestState as OracleRequestState | undefined)?.payoutAmount ?? 0n) / 1_000_000} USDC
-              </div>
-            </div>
+            ) : (
+              <div className="mt-4 text-base-content/60">Select an audit record to inspect it.</div>
+            )}
           </div>
         </div>
       ) : null}

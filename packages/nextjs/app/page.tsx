@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Address } from "@scaffold-ui/components";
 import type { NextPage } from "next";
+import { formatUnits } from "viem";
 import { hardhat } from "viem/chains";
 import { useAccount } from "wagmi";
 import {
@@ -13,8 +14,23 @@ import {
   ShieldCheckIcon,
 } from "@heroicons/react/24/solid";
 import { RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
-import { useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useScaffoldReadContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useAdminWallet } from "~~/hooks/scaffold-eth/useAdminWallet";
+
+const TOKEN_DECIMALS = 6;
+
+const formatUsdcBalance = (value: bigint | undefined) => {
+  if (value === undefined) {
+    return "Loading...";
+  }
+
+  const numericValue = Number(formatUnits(value, TOKEN_DECIMALS));
+
+  return `${numericValue.toLocaleString(undefined, {
+    minimumFractionDigits: numericValue >= 100 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })} USDC`;
+};
 
 function UserMetricCard({
   title,
@@ -50,6 +66,14 @@ const Home: NextPage = () => {
   const { address: connectedAddress } = useAccount();
   const { isAdmin, isConnected } = useAdminWallet();
   const { targetNetwork } = useTargetNetwork();
+  const { data: walletUsdcBalance } = useScaffoldReadContract({
+    contractName: "MockUSDC",
+    functionName: "balanceOf",
+    args: [connectedAddress],
+    query: {
+      enabled: !!connectedAddress,
+    },
+  });
 
   if (isAdmin) {
     return (
@@ -155,6 +179,13 @@ const Home: NextPage = () => {
                   <p className="mt-3 text-sm leading-7 text-base-content/65">
                     Your wallet is ready for policy purchase and review.
                   </p>
+                  <div className="mt-4 rounded-2xl border border-success/20 bg-success/10 p-4">
+                    <div className="text-xs uppercase tracking-[0.18em] text-base-content/45">Wallet USDC</div>
+                    <div className="mt-2 text-2xl font-black text-success">{formatUsdcBalance(walletUsdcBalance)}</div>
+                    <div className="mt-2 text-sm leading-6 text-base-content/65">
+                      This updates from the live MockUSDC balance, so payout increases are easy to show during the demo.
+                    </div>
+                  </div>
                 </>
               )}
             </div>

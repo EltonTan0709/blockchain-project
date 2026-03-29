@@ -36,6 +36,7 @@ contract OracleCoordinator is Ownable, Pausable {
 
     address public policyManager;
     address public automationForwarder;
+    address public oracleCallbackConsumer;
     uint256 public nextRequestId = 1;
 
     mapping(address => bool) public reporters;
@@ -43,6 +44,7 @@ contract OracleCoordinator is Ownable, Pausable {
 
     event PolicyManagerUpdated(address indexed newPolicyManager);
     event AutomationForwarderUpdated(address indexed newAutomationForwarder);
+    event OracleCallbackConsumerUpdated(address indexed newOracleCallbackConsumer);
     event ReporterUpdated(address indexed reporter, bool isAuthorized);
     event OracleCheckRequested(uint256 indexed requestId, uint256 indexed policyId, address indexed requester);
     event OracleCheckFulfilled(
@@ -56,15 +58,12 @@ contract OracleCoordinator is Ownable, Pausable {
     );
 
     modifier onlyAutomation() {
-        require(
-            msg.sender == owner() || (automationForwarder != address(0) && msg.sender == automationForwarder),
-            "Not automation"
-        );
+        require(automationForwarder != address(0) && msg.sender == automationForwarder, "Not automation");
         _;
     }
 
     modifier onlyReporter() {
-        require(reporters[msg.sender], "Not authorized reporter");
+        require(reporters[msg.sender] || msg.sender == oracleCallbackConsumer, "Not authorized reporter");
         _;
     }
 
@@ -80,9 +79,16 @@ contract OracleCoordinator is Ownable, Pausable {
     }
 
     function setAutomationForwarder(address newAutomationForwarder) external onlyOwner {
+        require(newAutomationForwarder != address(0), "Invalid automation forwarder");
         automationForwarder = newAutomationForwarder;
 
         emit AutomationForwarderUpdated(newAutomationForwarder);
+    }
+
+    function setOracleCallbackConsumer(address newOracleCallbackConsumer) external onlyOwner {
+        oracleCallbackConsumer = newOracleCallbackConsumer;
+
+        emit OracleCallbackConsumerUpdated(newOracleCallbackConsumer);
     }
 
     function setReporter(address reporter, bool isAuthorized) external onlyOwner {

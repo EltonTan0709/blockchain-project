@@ -1,4 +1,3 @@
-import "server-only";
 import { createPublicClient, http } from "viem";
 import deployedContracts from "~~/contracts/deployedContracts";
 import { getFlightByFlightNumber } from "~~/lib/flights";
@@ -31,6 +30,13 @@ const policyManagerAbi = [
       },
     ],
   },
+  {
+    type: "function",
+    name: "getOracleReadyTimestamp",
+    stateMutability: "view",
+    inputs: [{ name: "policyId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 ] as const;
 
 type PolicySnapshot = {
@@ -45,6 +51,15 @@ type PolicySnapshot = {
   delayThresholdMinutes: bigint;
   policyType: number;
   status: number;
+};
+
+type OracleSourceDecision = {
+  sourceId: string;
+  sourceLabel: string;
+  outcome: number;
+  delayMinutes: number;
+  payoutEligible: boolean;
+  reason: string;
 };
 
 const targetNetwork = scaffoldConfig.targetNetworks[0];
@@ -93,6 +108,12 @@ const toOracleOutcome = (status: string) => {
   }
 };
 
+const isPayoutEligible = (policy: PolicySnapshot, oracleOutcome: number, delayMinutes: number) => {
+  return policy.policyType === 0
+    ? oracleOutcome === 2 && delayMinutes >= Number(policy.delayThresholdMinutes)
+    : oracleOutcome === 3;
+};
+
 const getReason = (policy: PolicySnapshot, oracleOutcome: number, delayMinutes: number) => {
   if (oracleOutcome === 0) {
     return "Flight data is still unresolved in Postgres.";
@@ -100,26 +121,102 @@ const getReason = (policy: PolicySnapshot, oracleOutcome: number, delayMinutes: 
 
   if (policy.policyType === 0) {
     if (oracleOutcome !== 2) {
-      return "Policy is a delay cover, but the flight is not marked delayed.";
+      return "Policy is a delay cover, but the voted oracle outcome is not delayed.";
     }
 
     if (delayMinutes < Number(policy.delayThresholdMinutes)) {
-      return `Delay is ${delayMinutes} minutes, below the ${Number(policy.delayThresholdMinutes)} minute threshold.`;
+      return `Voted delay is ${delayMinutes} minutes, below the ${Number(policy.delayThresholdMinutes)} minute threshold.`;
     }
 
-    return "Delay threshold met. Policy should pay out.";
+    return "Majority vote confirms the delay threshold has been met.";
   }
 
   if (oracleOutcome === 3) {
-    return "Flight is cancelled. Policy should pay out.";
+    return "Majority vote confirms the flight is cancelled.";
   }
 
-  return "Policy is a cancellation cover, but the flight is not marked cancelled.";
+  return "Policy is a cancellation cover, but the voted oracle outcome is not cancelled.";
+};
+
+const getMedianDelay = (delays: number[]) => {
+  if (delays.length === 0) {
+    return 0;
+  }
+
+  const sortedDelays = [...delays].sort((left, right) => left - right);
+  return sortedDelays[Math.floor(sortedDelays.length / 2)];
+};
+
+const compareSourcePriority = (leftId: string, rightId: string) => {
+  const sourcePriority = ["flight_status_board", "latest_ops_update", "history_parser"];
+  return sourcePriority.indexOf(leftId) - sourcePriority.indexOf(rightId);
+};
+
+const buildSourceDecisions = (
+  policy: PolicySnapshot,
+  flight: Awaited<ReturnType<typeof getFlightByFlightNumber>>[number],
+): OracleSourceDecision[] => {
+  const latestStatusUpdate = flight.statusUpdates[0];
+  const latestNoteDelay = parseDelayMinutes(latestStatusUpdate?.note);
+  const historicalStatuses = flight.statusUpdates.map(statusUpdate => statusUpdate.status);
+  const historicalDelayMinutes = flight.statusUpdates
+    .filter(statusUpdate => statusUpdate.status === "DELAYED")
+    .map(statusUpdate => parseDelayMinutes(statusUpdate.note))
+    .filter(delayMinutes => delayMinutes > 0);
+  const hasArrivedOrDepartedHistory = historicalStatuses.some(status => status === "DEPARTED" || status === "ARRIVED");
+
+  let historyOutcome = 0;
+  if (historicalStatuses.includes("CANCELLED")) {
+    historyOutcome = 3;
+  } else if (historicalStatuses.includes("DELAYED") || flight.currentStatus === "DELAYED") {
+    historyOutcome = 2;
+  } else if (hasArrivedOrDepartedHistory || flight.currentStatus === "DEPARTED" || flight.currentStatus === "ARRIVED") {
+    historyOutcome = 1;
+  }
+
+  const sourceDecisions: OracleSourceDecision[] = [
+    {
+      sourceId: "flight_status_board",
+      sourceLabel: "Flight Status Board",
+      outcome: toOracleOutcome(flight.currentStatus),
+      delayMinutes: latestNoteDelay,
+      payoutEligible: isPayoutEligible(policy, toOracleOutcome(flight.currentStatus), latestNoteDelay),
+      reason: "Uses the canonical Flight.currentStatus record plus the latest operator note.",
+    },
+    {
+      sourceId: "latest_ops_update",
+      sourceLabel: "Latest Ops Update",
+      outcome: toOracleOutcome(latestStatusUpdate?.status ?? flight.currentStatus),
+      delayMinutes: parseDelayMinutes(latestStatusUpdate?.note),
+      payoutEligible: isPayoutEligible(
+        policy,
+        toOracleOutcome(latestStatusUpdate?.status ?? flight.currentStatus),
+        parseDelayMinutes(latestStatusUpdate?.note),
+      ),
+      reason: "Uses only the most recent FlightStatusUpdate submitted by operations.",
+    },
+    {
+      sourceId: "history_parser",
+      sourceLabel: "History Parser",
+      outcome: historyOutcome,
+      delayMinutes: historyOutcome === 2 ? Math.max(...historicalDelayMinutes, latestNoteDelay, 0) : 0,
+      payoutEligible: isPayoutEligible(
+        policy,
+        historyOutcome,
+        historyOutcome === 2 ? Math.max(...historicalDelayMinutes, latestNoteDelay, 0) : 0,
+      ),
+      reason:
+        "Scans status history and note-derived delay evidence, then chooses the most severe supported disruption.",
+    },
+  ];
+
+  return sourceDecisions;
 };
 
 export const getOracleDecisionForPolicy = async (policyId: bigint) => {
+  const policyManagerAddress = (deployedPolicyManagerAddress ?? CONTRACTS.PolicyManager) as `0x${string}`;
   const policy = (await publicClient.readContract({
-    address: (deployedPolicyManagerAddress ?? CONTRACTS.PolicyManager) as `0x${string}`,
+    address: policyManagerAddress,
     abi: policyManagerAbi,
     functionName: "getPolicy",
     args: [policyId],
@@ -128,6 +225,15 @@ export const getOracleDecisionForPolicy = async (policyId: bigint) => {
   if (policy.policyId === 0n) {
     throw new Error("Policy not found on-chain.");
   }
+
+  const oracleReadyTimestamp = await publicClient
+    .readContract({
+      address: policyManagerAddress,
+      abi: policyManagerAbi,
+      functionName: "getOracleReadyTimestamp",
+      args: [policyId],
+    })
+    .catch(() => policy.departureTimestamp);
 
   const matchingFlights = await getFlightByFlightNumber(policy.flightNumber);
   if (matchingFlights.length === 0) {
@@ -143,13 +249,29 @@ export const getOracleDecisionForPolicy = async (policyId: bigint) => {
         Math.abs(new Date(right.scheduledDeparture).getTime() - targetDepartureMs),
     )[0];
 
+  const sourceDecisions = buildSourceDecisions(policy, matchedFlight);
+  const outcomeVotes = new Map<number, OracleSourceDecision[]>();
+
+  for (const sourceDecision of sourceDecisions) {
+    const existingVotes = outcomeVotes.get(sourceDecision.outcome) ?? [];
+    existingVotes.push(sourceDecision);
+    outcomeVotes.set(sourceDecision.outcome, existingVotes);
+  }
+
+  const rankedOutcomes = [...outcomeVotes.entries()].sort((left, right) => {
+    if (right[1].length !== left[1].length) {
+      return right[1].length - left[1].length;
+    }
+
+    return compareSourcePriority(left[1][0]?.sourceId ?? "", right[1][0]?.sourceId ?? "");
+  });
+
+  const [winningOutcome, winningSources] = rankedOutcomes[0];
+  const consensusDelayMinutes =
+    winningOutcome === 2 ? getMedianDelay(winningSources.map(source => source.delayMinutes)) : 0;
+  const payoutEligible = isPayoutEligible(policy, winningOutcome, consensusDelayMinutes);
+  const baseReason = getReason(policy, winningOutcome, consensusDelayMinutes);
   const latestStatusUpdate = matchedFlight.statusUpdates[0];
-  const delayMinutes = parseDelayMinutes(latestStatusUpdate?.note);
-  const oracleOutcome = toOracleOutcome(matchedFlight.currentStatus);
-  const payoutEligible =
-    policy.policyType === 0
-      ? oracleOutcome === 2 && delayMinutes >= Number(policy.delayThresholdMinutes)
-      : oracleOutcome === 3;
 
   return {
     policy: {
@@ -158,6 +280,7 @@ export const getOracleDecisionForPolicy = async (policyId: bigint) => {
       flightNumber: policy.flightNumber,
       purchaseTime: policy.purchaseTime.toString(),
       departureTimestamp: policy.departureTimestamp.toString(),
+      oracleReadyTimestamp: oracleReadyTimestamp.toString(),
       premium: policy.premium.toString(),
       coverageAmount: policy.coverageAmount.toString(),
       endTime: policy.endTime.toString(),
@@ -171,12 +294,16 @@ export const getOracleDecisionForPolicy = async (policyId: bigint) => {
       currentStatus: matchedFlight.currentStatus,
       scheduledDeparture: matchedFlight.scheduledDeparture.toISOString(),
       latestNote: latestStatusUpdate?.note ?? null,
+      statusUpdatesCount: matchedFlight.statusUpdates.length,
     },
+    sources: sourceDecisions,
     oracle: {
-      outcome: oracleOutcome,
-      delayMinutes,
+      outcome: winningOutcome,
+      delayMinutes: consensusDelayMinutes,
       payoutEligible,
-      reason: getReason(policy, oracleOutcome, delayMinutes),
+      reason: `${baseReason} Vote: ${winningSources.length}/${sourceDecisions.length} sources agreed.`,
+      winningVotes: winningSources.length,
+      totalVotes: sourceDecisions.length,
     },
   };
 };

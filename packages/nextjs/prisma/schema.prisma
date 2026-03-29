@@ -15,6 +15,14 @@ enum FlightStatus {
   ARRIVED
 }
 
+enum OracleRequestAuditStatus {
+  REQUESTED
+  AWAITING_CHAINLINK
+  FULFILLED
+  FAILED
+  EXPIRED
+}
+
 model Flight {
   id                 String               @id @default(cuid())
   flightNumber       String
@@ -44,4 +52,36 @@ model FlightStatusUpdate {
 
   @@index([flightId, createdAt])
   @@index([status, createdAt])
+}
+
+model OracleRequestAudit {
+  id                 String                   @id @default(cuid()) @db.Text
+  chainId            Int
+  policyId           BigInt
+  requestId          BigInt?
+  chainlinkRequestId String?                  @db.Text
+  flightKey          String?                  @db.Text
+  requestStatus      Int
+  auditStatus        OracleRequestAuditStatus
+  usedChainlink      Boolean
+  flightId           String?                  @db.Text
+  flightNumber       String?                  @db.Text
+  flightStatus       FlightStatus?
+  latestNote         String?                  @db.Text
+  outcome            Int?
+  delayMinutes       Int?
+  payoutEligible     Boolean?
+  payoutExecuted     Boolean?
+  payoutAmount       String?                  @db.Text
+  transactionHash    String?                  @db.Text
+  errorMessage       String?                  @db.Text
+  metadata           Json?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@unique([chainId, policyId])
+  @@index([chainId, auditStatus])
+  @@index([chainId, chainlinkRequestId])
+  @@index([chainId, requestId])
+  @@map("OracleRequestAudit")
 }

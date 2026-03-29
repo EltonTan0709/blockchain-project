@@ -18,6 +18,8 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
     IERC20 public immutable stablecoin;
     address public insurancePool;
     address public oracleCoordinator;
+    bool public demoOracleMode;
+    uint256 public demoOracleDelaySeconds = 60;
 
     uint256 public nextPolicyId;
 
@@ -66,6 +68,7 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
 
     event InsurancePoolUpdated(address indexed newPool);
     event OracleCoordinatorUpdated(address indexed newCoordinator);
+    event OracleEvaluationConfigUpdated(bool demoOracleMode, uint256 demoOracleDelaySeconds);
     event PolicyResolved(
         uint256 indexed policyId,
         address indexed holder,
@@ -104,6 +107,17 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         oracleCoordinator = _oracleCoordinator;
 
         emit OracleCoordinatorUpdated(_oracleCoordinator);
+    }
+
+    function setOracleEvaluationConfig(bool _demoOracleMode, uint256 _demoOracleDelaySeconds) external onlyOwner {
+        if (_demoOracleMode) {
+            require(_demoOracleDelaySeconds > 0, "Demo delay required");
+        }
+
+        demoOracleMode = _demoOracleMode;
+        demoOracleDelaySeconds = _demoOracleDelaySeconds;
+
+        emit OracleEvaluationConfigUpdated(_demoOracleMode, _demoOracleDelaySeconds);
     }
 
     function buyPolicy(
@@ -173,13 +187,20 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         return userPolicies[user];
     }
 
+    function getOracleReadyTimestamp(uint256 policyId) external view returns (uint256) {
+        Policy memory policy = policies[policyId];
+        require(policy.policyId != 0, "Policy not found");
+
+        return _getOracleReadyTimestamp(policy);
+    }
+
     function canRequestOracleCheck(uint256 policyId) external view returns (bool) {
         Policy memory policy = policies[policyId];
         return
             oracleCoordinator != address(0) &&
             policy.policyId != 0 &&
             policy.status == PolicyStatus.Active &&
-            block.timestamp >= policy.departureTimestamp;
+            block.timestamp >= _getOracleReadyTimestamp(policy);
     }
 
     function resolvePolicyFromOracle(
@@ -192,7 +213,7 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         Policy storage policy = policies[policyId];
         require(policy.policyId != 0, "Policy not found");
         require(policy.status == PolicyStatus.Active, "Policy not active");
-        require(block.timestamp >= policy.departureTimestamp, "Flight has not departed yet");
+        require(block.timestamp >= _getOracleReadyTimestamp(policy), "Oracle check not ready");
 
         bool eligibleForPayout = _isEligibleForPayout(policy, outcome, delayMinutes);
 
@@ -223,6 +244,14 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         }
 
         return false;
+    }
+
+    function _getOracleReadyTimestamp(Policy memory policy) internal view returns (uint256) {
+        if (demoOracleMode) {
+            return policy.purchaseTime + demoOracleDelaySeconds;
+        }
+
+        return policy.departureTimestamp;
     }
 
     function pause() external onlyOwner {

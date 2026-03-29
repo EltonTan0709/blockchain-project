@@ -8,6 +8,7 @@
     "dev": "next dev",
     "format": "prettier --write . '!(node_modules|.next|contracts)/**/*'",
     "lint": "next lint",
+    "oracle:worker": "tsx scripts/oracleWorker.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "prisma db seed",

@@ -26,6 +26,16 @@ const deployedContracts = {
           type: "constructor",
         },
         {
+          inputs: [],
+          name: "EnforcedPause",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "ExpectedPause",
+          type: "error",
+        },
+        {
           inputs: [
             {
               internalType: "address",
@@ -45,6 +55,11 @@ const deployedContracts = {
             },
           ],
           name: "OwnableUnauthorizedAccount",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "ReentrancyGuardReentrantCall",
           type: "error",
         },
         {
@@ -83,6 +98,64 @@ const deployedContracts = {
             },
           ],
           name: "OwnershipTransferred",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "address",
+              name: "account",
+              type: "address",
+            },
+          ],
+          name: "Paused",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "policyManager",
+              type: "address",
+            },
+          ],
+          name: "PolicyManagerSet",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "payer",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "amount",
+              type: "uint256",
+            },
+          ],
+          name: "PremiumReceived",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "address",
+              name: "account",
+              type: "address",
+            },
+          ],
+          name: "Unpaused",
           type: "event",
         },
         {
@@ -145,7 +218,71 @@ const deployedContracts = {
         },
         {
           inputs: [],
+          name: "pause",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "paused",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "policyManager",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "payer",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "amount",
+              type: "uint256",
+            },
+          ],
+          name: "receivePremium",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
           name: "renounceOwnership",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "_policyManager",
+              type: "address",
+            },
+          ],
+          name: "setPolicyManager",
           outputs: [],
           stateMutability: "nonpayable",
           type: "function",
@@ -177,6 +314,19 @@ const deployedContracts = {
           type: "function",
         },
         {
+          inputs: [],
+          name: "totalPremiumsCollected",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
           inputs: [
             {
               internalType: "address",
@@ -189,11 +339,19 @@ const deployedContracts = {
           stateMutability: "nonpayable",
           type: "function",
         },
+        {
+          inputs: [],
+          name: "unpause",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
       ],
       inheritedFunctions: {
         owner: "@openzeppelin/contracts/access/Ownable.sol",
         renounceOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
+        paused: "@openzeppelin/contracts/utils/Pausable.sol",
       },
       deployedOnBlock: 5,
     },
@@ -628,6 +786,547 @@ const deployedContracts = {
       },
       deployedOnBlock: 3,
     },
+    PolicyManager: {
+      address: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+      abi: [
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "_stablecoin",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "_insurancePool",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "initialOwner",
+              type: "address",
+            },
+          ],
+          stateMutability: "nonpayable",
+          type: "constructor",
+        },
+        {
+          inputs: [],
+          name: "EnforcedPause",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "ExpectedPause",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "owner",
+              type: "address",
+            },
+          ],
+          name: "OwnableInvalidOwner",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "account",
+              type: "address",
+            },
+          ],
+          name: "OwnableUnauthorizedAccount",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "ReentrancyGuardReentrantCall",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "token",
+              type: "address",
+            },
+          ],
+          name: "SafeERC20FailedOperation",
+          type: "error",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "newPool",
+              type: "address",
+            },
+          ],
+          name: "InsurancePoolUpdated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "previousOwner",
+              type: "address",
+            },
+            {
+              indexed: true,
+              internalType: "address",
+              name: "newOwner",
+              type: "address",
+            },
+          ],
+          name: "OwnershipTransferred",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "address",
+              name: "account",
+              type: "address",
+            },
+          ],
+          name: "Paused",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+            {
+              indexed: true,
+              internalType: "address",
+              name: "holder",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "string",
+              name: "flightNumber",
+              type: "string",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "departureTimestamp",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "enum PolicyManager.PolicyType",
+              name: "policyType",
+              type: "uint8",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "premium",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "coverageAmount",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "purchaseTime",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "endTime",
+              type: "uint256",
+            },
+          ],
+          name: "PolicyPurchased",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "address",
+              name: "account",
+              type: "address",
+            },
+          ],
+          name: "Unpaused",
+          type: "event",
+        },
+        {
+          inputs: [],
+          name: "MAX_FLIGHT_NUMBER_LENGTH",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "string",
+              name: "flightNumber",
+              type: "string",
+            },
+            {
+              internalType: "uint256",
+              name: "departureTimestamp",
+              type: "uint256",
+            },
+            {
+              internalType: "uint8",
+              name: "policyType",
+              type: "uint8",
+            },
+            {
+              internalType: "uint256",
+              name: "coverageAmount",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "duration",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "premium",
+              type: "uint256",
+            },
+          ],
+          name: "buyPolicy",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+          ],
+          name: "getPolicy",
+          outputs: [
+            {
+              components: [
+                {
+                  internalType: "uint256",
+                  name: "policyId",
+                  type: "uint256",
+                },
+                {
+                  internalType: "address",
+                  name: "holder",
+                  type: "address",
+                },
+                {
+                  internalType: "string",
+                  name: "flightNumber",
+                  type: "string",
+                },
+                {
+                  internalType: "uint256",
+                  name: "purchaseTime",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "departureTimestamp",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "premium",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "coverageAmount",
+                  type: "uint256",
+                },
+                {
+                  internalType: "uint256",
+                  name: "endTime",
+                  type: "uint256",
+                },
+                {
+                  internalType: "enum PolicyManager.PolicyType",
+                  name: "policyType",
+                  type: "uint8",
+                },
+                {
+                  internalType: "enum PolicyManager.PolicyStatus",
+                  name: "status",
+                  type: "uint8",
+                },
+              ],
+              internalType: "struct PolicyManager.Policy",
+              name: "",
+              type: "tuple",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "user",
+              type: "address",
+            },
+          ],
+          name: "getUserPolicies",
+          outputs: [
+            {
+              internalType: "uint256[]",
+              name: "",
+              type: "uint256[]",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "insurancePool",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "nextPolicyId",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "owner",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "pause",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "paused",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          name: "policies",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+            {
+              internalType: "address",
+              name: "holder",
+              type: "address",
+            },
+            {
+              internalType: "string",
+              name: "flightNumber",
+              type: "string",
+            },
+            {
+              internalType: "uint256",
+              name: "purchaseTime",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "departureTimestamp",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "premium",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "coverageAmount",
+              type: "uint256",
+            },
+            {
+              internalType: "uint256",
+              name: "endTime",
+              type: "uint256",
+            },
+            {
+              internalType: "enum PolicyManager.PolicyType",
+              name: "policyType",
+              type: "uint8",
+            },
+            {
+              internalType: "enum PolicyManager.PolicyStatus",
+              name: "status",
+              type: "uint8",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "renounceOwnership",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "_insurancePool",
+              type: "address",
+            },
+          ],
+          name: "setInsurancePool",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "stablecoin",
+          outputs: [
+            {
+              internalType: "contract IERC20",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "newOwner",
+              type: "address",
+            },
+          ],
+          name: "transferOwnership",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "unpause",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          name: "userPolicies",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+      ],
+      inheritedFunctions: {
+        owner: "@openzeppelin/contracts/access/Ownable.sol",
+        renounceOwnership: "@openzeppelin/contracts/access/Ownable.sol",
+        transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
+        paused: "@openzeppelin/contracts/utils/Pausable.sol",
+      },
+      deployedOnBlock: 7,
+    },
     YourContract: {
       address: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
       abi: [
@@ -774,8 +1473,726 @@ const deployedContracts = {
     },
   },
   11155111: {
+    ChainlinkDemoOracleConsumer: {
+      address: "0xb87DfCb4b76AE31dc65d242588Af2E17a79A2F76",
+      abi: [
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "_oracleCoordinator",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "initialOwner",
+              type: "address",
+            },
+            {
+              internalType: "address",
+              name: "chainlinkRouter",
+              type: "address",
+            },
+          ],
+          stateMutability: "nonpayable",
+          type: "constructor",
+        },
+        {
+          inputs: [],
+          name: "EmptyArgs",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "EmptyOracleApiBaseUrl",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "EmptySource",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "EnforcedPause",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "ExpectedPause",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "InvalidCallbackGasLimit",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "InvalidChainlinkRouter",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "InvalidDonId",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "InvalidFunctionsRouter",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "outcome",
+              type: "uint256",
+            },
+          ],
+          name: "InvalidOracleOutcome",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "InvalidPolicyId",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "InvalidSubscriptionId",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "NoInlineSecrets",
+          type: "error",
+        },
+        {
+          inputs: [],
+          name: "OnlyRouterCanFulfill",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+          ],
+          name: "PolicyEvaluationAlreadyRequested",
+          type: "error",
+        },
+        {
+          inputs: [
+            {
+              internalType: "bytes32",
+              name: "requestId",
+              type: "bytes32",
+            },
+          ],
+          name: "UnexpectedRequestID",
+          type: "error",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "uint64",
+              name: "subscriptionId",
+              type: "uint64",
+            },
+            {
+              indexed: false,
+              internalType: "uint32",
+              name: "callbackGasLimit",
+              type: "uint32",
+            },
+            {
+              indexed: true,
+              internalType: "bytes32",
+              name: "donId",
+              type: "bytes32",
+            },
+            {
+              indexed: false,
+              internalType: "string",
+              name: "oracleApiBaseUrl",
+              type: "string",
+            },
+          ],
+          name: "ChainlinkConfigUpdated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint8",
+              name: "outcome",
+              type: "uint8",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "delayMinutes",
+              type: "uint256",
+            },
+            {
+              indexed: true,
+              internalType: "address",
+              name: "caller",
+              type: "address",
+            },
+          ],
+          name: "ConsensusResultSubmitted",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "newFunctionsRouter",
+              type: "address",
+            },
+          ],
+          name: "FunctionsRouterUpdated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "from",
+              type: "address",
+            },
+            {
+              indexed: true,
+              internalType: "address",
+              name: "to",
+              type: "address",
+            },
+          ],
+          name: "OwnershipTransferRequested",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "from",
+              type: "address",
+            },
+            {
+              indexed: true,
+              internalType: "address",
+              name: "to",
+              type: "address",
+            },
+          ],
+          name: "OwnershipTransferred",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "address",
+              name: "account",
+              type: "address",
+            },
+          ],
+          name: "Paused",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "bytes32",
+              name: "chainlinkRequestId",
+              type: "bytes32",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "bytes",
+              name: "err",
+              type: "bytes",
+            },
+          ],
+          name: "PolicyEvaluationFailed",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "bytes32",
+              name: "chainlinkRequestId",
+              type: "bytes32",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint8",
+              name: "outcome",
+              type: "uint8",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "delayMinutes",
+              type: "uint256",
+            },
+            {
+              indexed: true,
+              internalType: "address",
+              name: "caller",
+              type: "address",
+            },
+          ],
+          name: "PolicyEvaluationFulfilled",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "bytes32",
+              name: "chainlinkRequestId",
+              type: "bytes32",
+            },
+            {
+              indexed: true,
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "string",
+              name: "requestUrl",
+              type: "string",
+            },
+          ],
+          name: "PolicyEvaluationRequested",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "bytes32",
+              name: "id",
+              type: "bytes32",
+            },
+          ],
+          name: "RequestFulfilled",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "bytes32",
+              name: "id",
+              type: "bytes32",
+            },
+          ],
+          name: "RequestSent",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "address",
+              name: "account",
+              type: "address",
+            },
+          ],
+          name: "Unpaused",
+          type: "event",
+        },
+        {
+          inputs: [],
+          name: "acceptOwnership",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          name: "activeChainlinkRequestIdByPolicyId",
+          outputs: [
+            {
+              internalType: "bytes32",
+              name: "",
+              type: "bytes32",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "callbackGasLimit",
+          outputs: [
+            {
+              internalType: "uint32",
+              name: "",
+              type: "uint32",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "donId",
+          outputs: [
+            {
+              internalType: "bytes32",
+              name: "",
+              type: "bytes32",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "functionsRouter",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "getChainlinkRouter",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "bytes32",
+              name: "requestId",
+              type: "bytes32",
+            },
+            {
+              internalType: "bytes",
+              name: "response",
+              type: "bytes",
+            },
+            {
+              internalType: "bytes",
+              name: "err",
+              type: "bytes",
+            },
+          ],
+          name: "handleOracleFulfillment",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "lastError",
+          outputs: [
+            {
+              internalType: "bytes",
+              name: "",
+              type: "bytes",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "lastRequestId",
+          outputs: [
+            {
+              internalType: "bytes32",
+              name: "",
+              type: "bytes32",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "lastResponse",
+          outputs: [
+            {
+              internalType: "bytes",
+              name: "",
+              type: "bytes",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "oracleApiBaseUrl",
+          outputs: [
+            {
+              internalType: "string",
+              name: "",
+              type: "string",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "oracleCoordinator",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "owner",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "pause",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "paused",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "bytes32",
+              name: "",
+              type: "bytes32",
+            },
+          ],
+          name: "policyIdByChainlinkRequestId",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+          ],
+          name: "requestPolicyEvaluation",
+          outputs: [
+            {
+              internalType: "bytes32",
+              name: "",
+              type: "bytes32",
+            },
+          ],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "newFunctionsRouter",
+              type: "address",
+            },
+          ],
+          name: "setFunctionsRouter",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+            {
+              internalType: "uint8",
+              name: "outcome",
+              type: "uint8",
+            },
+            {
+              internalType: "uint256",
+              name: "delayMinutes",
+              type: "uint256",
+            },
+          ],
+          name: "submitConsensusResult",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "subscriptionId",
+          outputs: [
+            {
+              internalType: "uint64",
+              name: "",
+              type: "uint64",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
+              name: "to",
+              type: "address",
+            },
+          ],
+          name: "transferOwnership",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "unpause",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint64",
+              name: "newSubscriptionId",
+              type: "uint64",
+            },
+            {
+              internalType: "uint32",
+              name: "newCallbackGasLimit",
+              type: "uint32",
+            },
+            {
+              internalType: "bytes32",
+              name: "newDonId",
+              type: "bytes32",
+            },
+            {
+              internalType: "string",
+              name: "newOracleApiBaseUrl",
+              type: "string",
+            },
+          ],
+          name: "updateChainlinkConfig",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+      ],
+      inheritedFunctions: {
+        handleOracleFulfillment: "@chainlink/contracts/src/v0.8/functions/v1_0_0/FunctionsClient.sol",
+        acceptOwnership: "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol",
+        owner: "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol",
+        transferOwnership: "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol",
+        paused: "@openzeppelin/contracts/utils/Pausable.sol",
+      },
+      deployedOnBlock: 10546483,
+    },
     InsurancePool: {
-      address: "0xd296bBE0f4A394fCa72e9cab4478f5BE4B7DD8e6",
+      address: "0xf33CF818B8188edf692780950f8f1902Fb32b16d",
       abi: [
         {
           inputs: [
@@ -1182,7 +2599,7 @@ const deployedContracts = {
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         paused: "@openzeppelin/contracts/utils/Pausable.sol",
       },
-      deployedOnBlock: 10538595,
+      deployedOnBlock: 10545474,
     },
     MockUSDC: {
       address: "0xFA71294055CbAF8272269b3b875cBFFdCA382Bb6",
@@ -1616,7 +3033,7 @@ const deployedContracts = {
       deployedOnBlock: 10531314,
     },
     OracleCoordinator: {
-      address: "0xE829e46105cbc7AB4EF0b88c32490615488E5E69",
+      address: "0x29675C0F6593D9Fd290CC4f67ac0bFB324a853D5",
       abi: [
         {
           inputs: [
@@ -1672,6 +3089,19 @@ const deployedContracts = {
             },
           ],
           name: "AutomationForwarderUpdated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "newOracleCallbackConsumer",
+              type: "address",
+            },
+          ],
+          name: "OracleCallbackConsumerUpdated",
           type: "event",
         },
         {
@@ -1900,6 +3330,19 @@ const deployedContracts = {
         },
         {
           inputs: [],
+          name: "oracleCallbackConsumer",
+          outputs: [
+            {
+              internalType: "address",
+              name: "",
+              type: "address",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
           name: "owner",
           outputs: [
             {
@@ -2077,6 +3520,19 @@ const deployedContracts = {
           inputs: [
             {
               internalType: "address",
+              name: "newOracleCallbackConsumer",
+              type: "address",
+            },
+          ],
+          name: "setOracleCallbackConsumer",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "address",
               name: "newPolicyManager",
               type: "address",
             },
@@ -2131,10 +3587,10 @@ const deployedContracts = {
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         paused: "@openzeppelin/contracts/utils/Pausable.sol",
       },
-      deployedOnBlock: 10538596,
+      deployedOnBlock: 10545925,
     },
     PolicyManager: {
-      address: "0x3a402279766C03bEEC104331810d6dCeB80ea0C3",
+      address: "0x00b33293260232f6EC288986EdAb94C3b614E5De",
       abi: [
         {
           inputs: [
@@ -2234,6 +3690,25 @@ const deployedContracts = {
             },
           ],
           name: "OracleCoordinatorUpdated",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: false,
+              internalType: "bool",
+              name: "demoOracleMode",
+              type: "bool",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "demoOracleDelaySeconds",
+              type: "uint256",
+            },
+          ],
+          name: "OracleEvaluationConfigUpdated",
           type: "event",
         },
         {
@@ -2461,6 +3936,32 @@ const deployedContracts = {
           type: "function",
         },
         {
+          inputs: [],
+          name: "demoOracleDelaySeconds",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "demoOracleMode",
+          outputs: [
+            {
+              internalType: "bool",
+              name: "",
+              type: "bool",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
           inputs: [
             {
               internalType: "string",
@@ -2482,6 +3983,25 @@ const deployedContracts = {
             },
           ],
           stateMutability: "pure",
+          type: "function",
+        },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "policyId",
+              type: "uint256",
+            },
+          ],
+          name: "getOracleReadyTimestamp",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
           type: "function",
         },
         {
@@ -2788,6 +4308,24 @@ const deployedContracts = {
           type: "function",
         },
         {
+          inputs: [
+            {
+              internalType: "bool",
+              name: "_demoOracleMode",
+              type: "bool",
+            },
+            {
+              internalType: "uint256",
+              name: "_demoOracleDelaySeconds",
+              type: "uint256",
+            },
+          ],
+          name: "setOracleEvaluationConfig",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
+        {
           inputs: [],
           name: "stablecoin",
           outputs: [
@@ -2851,7 +4389,7 @@ const deployedContracts = {
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         paused: "@openzeppelin/contracts/utils/Pausable.sol",
       },
-      deployedOnBlock: 10538597,
+      deployedOnBlock: 10545927,
     },
     YourContract: {
       address: "0x82CCE35f4542bf7aaCF1195445BD16c39B460094",

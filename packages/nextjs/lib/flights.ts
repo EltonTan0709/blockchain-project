@@ -1,5 +1,4 @@
 import { FlightStatus, Prisma } from "@prisma/client";
-import "server-only";
 import { prisma } from "~~/lib/prisma";
 
 const flightWithStatusUpdatesInclude = Prisma.validator<Prisma.FlightInclude>()({

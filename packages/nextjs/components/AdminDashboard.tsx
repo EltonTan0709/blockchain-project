@@ -446,7 +446,7 @@ export default function AdminDashboard() {
               subtitle={
                 metrics
                   ? `Compared against ${metrics.evaluation.oracleDecisionConsistencySamples} fulfilled oracle samples.`
-                  : "Compares on-chain oracle outcomes against the current Postgres-backed oracle decision."
+                  : "Compares on-chain oracle outcomes against the current Postgres-backed consensus decision."
               }
               tone="success"
             />
@@ -583,7 +583,7 @@ export default function AdminDashboard() {
                 <div className="text-lg font-semibold">Oracle Automation</div>
               </div>
               <p className="mt-3 text-sm leading-7 text-base-content/65">
-                Review policy-to-flight decisions and process the on-chain oracle flow end to end.
+                Review source votes, consensus outcomes, and the on-chain oracle settlement flow end to end.
               </p>
             </Link>
 

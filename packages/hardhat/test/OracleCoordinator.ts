@@ -15,7 +15,8 @@ const expectEthCostBudget = (gasUsed: bigint, maxCostWei: bigint, label: string)
 
 describe("Oracle coordinator workflow", function () {
   async function deployFixture() {
-    const [owner, liquidityProvider, traveler, oracleReporter, automationForwarder] = await ethers.getSigners();
+    const [owner, liquidityProvider, traveler, oracleReporter, automationForwarder, simulatedFunctionsRouter] =
+      await ethers.getSigners();
 
     const mockUSDCFactory = (await ethers.getContractFactory("MockUSDC")) as any;
     const mockUSDC = await mockUSDCFactory.deploy(owner.address);
@@ -28,6 +29,18 @@ describe("Oracle coordinator workflow", function () {
     const oracleCoordinatorFactory = (await ethers.getContractFactory("OracleCoordinator")) as any;
     const oracleCoordinator = await oracleCoordinatorFactory.deploy(owner.address);
     await oracleCoordinator.waitForDeployment();
+
+    const mockFunctionsRouterFactory = (await ethers.getContractFactory("MockFunctionsRouter")) as any;
+    const mockFunctionsRouter = await mockFunctionsRouterFactory.deploy();
+    await mockFunctionsRouter.waitForDeployment();
+
+    const chainlinkDemoOracleConsumerFactory = (await ethers.getContractFactory("ChainlinkDemoOracleConsumer")) as any;
+    const chainlinkDemoOracleConsumer = await chainlinkDemoOracleConsumerFactory.deploy(
+      await oracleCoordinator.getAddress(),
+      owner.address,
+      await mockFunctionsRouter.getAddress(),
+    );
+    await chainlinkDemoOracleConsumer.waitForDeployment();
 
     const policyManagerFactory = (await ethers.getContractFactory("PolicyManager")) as any;
     const policyManager = (await policyManagerFactory.deploy(
@@ -44,6 +57,8 @@ describe("Oracle coordinator workflow", function () {
     await insurancePoolContract.setPolicyManager(await policyManager.getAddress());
     await oracleCoordinatorContract.setPolicyManager(await policyManager.getAddress());
     await oracleCoordinatorContract.setAutomationForwarder(automationForwarder.address);
+    await oracleCoordinatorContract.setOracleCallbackConsumer(await chainlinkDemoOracleConsumer.getAddress());
+    await chainlinkDemoOracleConsumer.setFunctionsRouter(simulatedFunctionsRouter.address);
     await oracleCoordinatorContract.setReporter(oracleReporter.address, true);
 
     await mockUSDC.mint(liquidityProvider.address, 5_000);
@@ -55,13 +70,17 @@ describe("Oracle coordinator workflow", function () {
     await mockUSDC.connect(traveler).approve(await policyManager.getAddress(), 500_000_000);
 
     return {
+      owner,
       liquidityProvider,
       traveler,
       oracleReporter,
       automationForwarder,
+      simulatedFunctionsRouter,
+      mockFunctionsRouter,
       mockUSDC,
       insurancePool: insurancePoolContract,
       oracleCoordinator: oracleCoordinatorContract,
+      chainlinkDemoOracleConsumer,
       policyManager,
     };
   }
@@ -145,6 +164,141 @@ describe("Oracle coordinator workflow", function () {
     await oracleCoordinator.connect(oracleReporter).fulfillOracleCheck(1, 3, 0);
 
     expect(await mockUSDC.balanceOf(traveler.address)).to.equal(travelerBalanceBefore + 300_000_000n);
+  });
+
+  it("allows the callback consumer to fulfill a voted oracle result", async function () {
+    const {
+      traveler,
+      automationForwarder,
+      simulatedFunctionsRouter,
+      chainlinkDemoOracleConsumer,
+      mockUSDC,
+      oracleCoordinator,
+      policyManager,
+    } = await deployFixture();
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const departureTimestamp = BigInt(latestBlock!.timestamp + 900);
+
+    await policyManager
+      .connect(traveler)
+      .buyPolicy("LH779", departureTimestamp, 0, 120_000_000, 12 * 3600, 180, 7_000_000);
+
+    await ethers.provider.send("evm_setNextBlockTimestamp", [Number(departureTimestamp + 2n)]);
+    await ethers.provider.send("evm_mine", []);
+
+    await oracleCoordinator
+      .connect(automationForwarder)
+      .performUpkeep(ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1n]));
+
+    const travelerBalanceBefore = await mockUSDC.balanceOf(traveler.address);
+
+    await expect(chainlinkDemoOracleConsumer.connect(simulatedFunctionsRouter).submitConsensusResult(1, 2, 240))
+      .to.emit(oracleCoordinator, "OracleCheckFulfilled")
+      .withArgs(1n, 1n, 2n, 240n, true, 120_000_000n, await chainlinkDemoOracleConsumer.getAddress());
+
+    expect(await mockUSDC.balanceOf(traveler.address)).to.equal(travelerBalanceBefore + 120_000_000n);
+  });
+
+  it("can send a real Functions request and settle through the router callback", async function () {
+    const {
+      owner,
+      traveler,
+      automationForwarder,
+      simulatedFunctionsRouter,
+      mockFunctionsRouter,
+      chainlinkDemoOracleConsumer,
+      mockUSDC,
+      oracleCoordinator,
+      policyManager,
+    } = await deployFixture();
+
+    await chainlinkDemoOracleConsumer.updateChainlinkConfig(
+      6421n,
+      300_000,
+      ethers.encodeBytes32String("fun-ethereum-sepolia-1"),
+      "https://oracle.example.com",
+    );
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const departureTimestamp = BigInt(latestBlock!.timestamp + 900);
+
+    await policyManager
+      .connect(traveler)
+      .buyPolicy("BA12", departureTimestamp, 0, 120_000_000, 12 * 3600, 180, 7_000_000);
+
+    await ethers.provider.send("evm_setNextBlockTimestamp", [Number(departureTimestamp + 2n)]);
+    await ethers.provider.send("evm_mine", []);
+
+    await oracleCoordinator
+      .connect(automationForwarder)
+      .performUpkeep(ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1n]));
+
+    const travelerBalanceBefore = await mockUSDC.balanceOf(traveler.address);
+
+    await expect(chainlinkDemoOracleConsumer.connect(simulatedFunctionsRouter).requestPolicyEvaluation(1)).to.emit(
+      chainlinkDemoOracleConsumer,
+      "PolicyEvaluationRequested",
+    );
+
+    const activeRequestId = await chainlinkDemoOracleConsumer.activeChainlinkRequestIdByPolicyId(1);
+    expect(activeRequestId).to.not.equal(ethers.ZeroHash);
+
+    const response = ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [2n, 240n]);
+    await expect(
+      mockFunctionsRouter.fulfillRequest(
+        await chainlinkDemoOracleConsumer.getAddress(),
+        activeRequestId,
+        response,
+        "0x",
+      ),
+    )
+      .to.emit(oracleCoordinator, "OracleCheckFulfilled")
+      .withArgs(1n, 1n, 2n, 240n, true, 120_000_000n, await chainlinkDemoOracleConsumer.getAddress());
+
+    expect(await chainlinkDemoOracleConsumer.activeChainlinkRequestIdByPolicyId(1)).to.equal(ethers.ZeroHash);
+    expect(await mockUSDC.balanceOf(traveler.address)).to.equal(travelerBalanceBefore + 120_000_000n);
+    expect(await chainlinkDemoOracleConsumer.getChainlinkRouter()).to.equal(await mockFunctionsRouter.getAddress());
+    expect(await chainlinkDemoOracleConsumer.owner()).to.equal(owner.address);
+  });
+
+  it("keeps the owner as config-only while the dedicated worker executes automation and callback", async function () {
+    const {
+      owner,
+      traveler,
+      automationForwarder,
+      simulatedFunctionsRouter,
+      chainlinkDemoOracleConsumer,
+      oracleCoordinator,
+      policyManager,
+    } = await deployFixture();
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const departureTimestamp = BigInt(latestBlock!.timestamp + 900);
+
+    await policyManager
+      .connect(traveler)
+      .buyPolicy("BA12", departureTimestamp, 0, 120_000_000, 12 * 3600, 180, 7_000_000);
+
+    await ethers.provider.send("evm_setNextBlockTimestamp", [Number(departureTimestamp + 2n)]);
+    await ethers.provider.send("evm_mine", []);
+
+    const performData = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1n]);
+
+    await expect(oracleCoordinator.connect(owner).performUpkeep(performData)).to.be.revertedWith("Not automation");
+
+    await expect(oracleCoordinator.connect(automationForwarder).performUpkeep(performData)).to.emit(
+      oracleCoordinator,
+      "OracleCheckRequested",
+    );
+
+    await expect(chainlinkDemoOracleConsumer.connect(owner).submitConsensusResult(1, 2, 240)).to.be.revertedWith(
+      "Not callback executor",
+    );
+
+    await expect(
+      chainlinkDemoOracleConsumer.connect(simulatedFunctionsRouter).submitConsensusResult(1, 2, 240),
+    ).to.emit(oracleCoordinator, "OracleCheckFulfilled");
   });
 
   it("keeps the core delayed-claim workflow within measurable gas and cost budgets", async function () {
