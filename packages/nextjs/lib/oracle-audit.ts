@@ -86,9 +86,7 @@ export const listOracleRequestAudits = async (limit = 25) => {
   const safeLimit = Math.max(1, Math.min(limit, 100));
 
   const audits = await prisma.oracleRequestAudit.findMany({
-    orderBy: {
-      updatedAt: "desc",
-    },
+    orderBy: [{ policyId: "desc" }, { createdAt: "desc" }],
     take: safeLimit,
   });
 

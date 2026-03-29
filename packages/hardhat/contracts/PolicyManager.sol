@@ -19,7 +19,7 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
     address public insurancePool;
     address public oracleCoordinator;
     bool public demoOracleMode;
-    uint256 public demoOracleDelaySeconds = 60;
+    uint256 public demoOracleDelaySeconds = 30;
 
     uint256 public nextPolicyId;
 

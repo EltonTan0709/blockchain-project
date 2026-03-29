@@ -147,6 +147,28 @@ const sampleFlights = [
       },
     ],
   },
+  {
+    flightNumber: "CX715",
+    departureAirport: "SIN",
+    arrivalAirport: "HKG",
+    scheduledDeparture: new Date("2027-04-02T10:20:00.000Z"),
+    scheduledArrival: new Date("2027-04-02T14:15:00.000Z"),
+    currentStatus: FlightStatus.SCHEDULED,
+    statusUpdates: [
+      {
+        status: FlightStatus.SCHEDULED,
+        note: "Initial departure schedule confirmed.",
+        updatedByWallet: adminWallet,
+        createdAt: new Date("2027-04-01T08:00:00.000Z"),
+      },
+      {
+        status: FlightStatus.DELAYED,
+        note: "Departure delayed by 45 minutes due to crew rotation.",
+        updatedByWallet: adminWallet,
+        createdAt: new Date("2027-04-02T09:35:00.000Z"),
+      },
+    ],
+  },
 ] as const;
 
 async function main() {

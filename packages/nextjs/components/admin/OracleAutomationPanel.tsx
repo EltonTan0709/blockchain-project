@@ -56,7 +56,28 @@ type OracleDisplayStatus = "Pending Callback" | "Paid Out" | "No Payout" | "Fail
 
 const HISTORY_REFRESH_INTERVAL_MS = 10_000;
 
-const getOutcomeLabel = (outcome: number | null | undefined) => {
+const formatFlightStatusLabel = (flightStatus: string | null | undefined) => {
+  if (!flightStatus) {
+    return "Unknown";
+  }
+
+  switch (flightStatus) {
+    case "SCHEDULED":
+      return "Scheduled";
+    case "DELAYED":
+      return "Delayed";
+    case "CANCELLED":
+      return "Cancelled";
+    case "DEPARTED":
+      return "Departed";
+    case "ARRIVED":
+      return "Arrived";
+    default:
+      return flightStatus;
+  }
+};
+
+const getOutcomeLabel = (outcome: number | null | undefined, flightStatus?: string | null) => {
   switch (outcome) {
     case 1:
       return "On Time";
@@ -65,7 +86,13 @@ const getOutcomeLabel = (outcome: number | null | undefined) => {
     case 3:
       return "Cancelled";
     default:
-      return "Unknown";
+      if (flightStatus === "SCHEDULED") {
+        return "Scheduled";
+      }
+      if (flightStatus === "DEPARTED" || flightStatus === "ARRIVED") {
+        return "No disruption";
+      }
+      return "Unresolved";
   }
 };
 
@@ -98,6 +125,14 @@ const getDisplayTone = (displayStatus: OracleDisplayStatus) => {
     default:
       return "badge-info";
   }
+};
+
+const getSourceDelayLabel = (outcome: number, delayMinutes: number) => {
+  if (outcome === 2) {
+    return `Delay: ${delayMinutes} minutes`;
+  }
+
+  return "Delay: not applied";
 };
 
 const SummaryCard = ({ label, value }: { label: string; value: number }) => {
@@ -252,7 +287,7 @@ export const OracleAutomationPanel = () => {
                       <div className={`badge ${getDisplayTone(displayStatus)}`}>{displayStatus}</div>
                     </div>
                     <div className="mt-3 grid gap-2 text-sm text-base-content/70 sm:grid-cols-3">
-                      <div>Outcome: {getOutcomeLabel(audit.outcome)}</div>
+                      <div>Outcome: {getOutcomeLabel(audit.outcome, audit.flightStatus)}</div>
                       <div>Delay: {audit.delayMinutes ?? 0} min</div>
                       <div>
                         Payout: {audit.payoutExecuted ? "Paid out" : audit.payoutEligible ? "Eligible" : "No payout"}
@@ -283,10 +318,12 @@ export const OracleAutomationPanel = () => {
                     <span className="font-semibold">Flight:</span> {selectedAudit.flightNumber ?? "Unknown"}
                   </div>
                   <div>
-                    <span className="font-semibold">Flight Status:</span> {selectedAudit.flightStatus ?? "Unknown"}
+                    <span className="font-semibold">Flight Status:</span>{" "}
+                    {formatFlightStatusLabel(selectedAudit.flightStatus)}
                   </div>
                   <div>
-                    <span className="font-semibold">Outcome:</span> {getOutcomeLabel(selectedAudit.outcome)}
+                    <span className="font-semibold">Outcome:</span>{" "}
+                    {getOutcomeLabel(selectedAudit.outcome, selectedAudit.flightStatus)}
                   </div>
                   <div>
                     <span className="font-semibold">Delay Minutes:</span> {selectedAudit.delayMinutes ?? 0}
@@ -335,9 +372,13 @@ export const OracleAutomationPanel = () => {
                       <div key={source.sourceId} className="rounded-2xl border border-base-300/70 bg-base-200/30 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="font-semibold">{source.sourceLabel}</div>
-                          <div className="badge badge-outline">{getOutcomeLabel(source.outcome)}</div>
+                          <div className="badge badge-outline">
+                            {getOutcomeLabel(source.outcome, selectedAudit.flightStatus)}
+                          </div>
                         </div>
-                        <div className="mt-2 text-base-content/70">Delay: {source.delayMinutes} minutes</div>
+                        <div className="mt-2 text-base-content/70">
+                          {getSourceDelayLabel(source.outcome, source.delayMinutes)}
+                        </div>
                         <div className="mt-1 text-base-content/70">
                           Payout: {source.payoutEligible ? "Eligible" : "Not eligible"}
                         </div>

@@ -93,9 +93,6 @@ const Home: NextPage = () => {
               Open Admin Dashboard
               <ArrowRightIcon className="h-5 w-5" />
             </Link>
-            <Link href="/admin/flights" className="btn btn-outline h-14 rounded-2xl px-7 text-base">
-              Manage Flights
-            </Link>
             <Link href="/admin/oracle" className="btn btn-outline h-14 rounded-2xl px-7 text-base">
               Oracle Ops
             </Link>
@@ -118,8 +115,8 @@ const Home: NextPage = () => {
               Manage your flight cover from one clean home screen.
             </h1>
             <p className="mt-5 max-w-2xl text-lg leading-8 text-base-content/70">
-              Compare insurance plans, go straight into purchase, review your existing policies, and check the mock
-              oracle workflow without needing to rely only on the nav bar.
+              Compare insurance plans, go straight into purchase, review your policies, and watch payout balance changes
+              from one home screen.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
@@ -183,7 +180,7 @@ const Home: NextPage = () => {
                     <div className="text-xs uppercase tracking-[0.18em] text-base-content/45">Wallet USDC</div>
                     <div className="mt-2 text-2xl font-black text-success">{formatUsdcBalance(walletUsdcBalance)}</div>
                     <div className="mt-2 text-sm leading-6 text-base-content/65">
-                      This updates from the live MockUSDC balance, so payout increases are easy to show during the demo.
+                      This updates from the live MockUSDC balance so premium deductions and payout credits stay visible.
                     </div>
                   </div>
                 </>
@@ -283,32 +280,32 @@ const Home: NextPage = () => {
                 <div className="text-lg font-semibold">Claim Flow</div>
               </div>
               <p className="mt-3 text-sm leading-7 text-base-content/65">
-                Oracle and payout processing remain admin-driven in this MVP, but this home page gives travelers a clear
-                overview of the full journey.
+                Track the full traveler journey from plan selection through payout review from one screen.
               </p>
             </div>
           </div>
         </div>
 
         <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
-          <h2 className="text-2xl font-bold">System Notes</h2>
+          <h2 className="text-2xl font-bold">Traveler Flow</h2>
           <div className="mt-5 space-y-4">
             <div className="rounded-2xl bg-base-200/60 p-4">
-              <div className="font-semibold">Plan-first journey</div>
+              <div className="font-semibold">Choose cover</div>
               <div className="mt-2 text-sm leading-7 text-base-content/65">
-                Travelers can still start with plans, but they no longer get forced there when opening home.
+                Compare delay and cancellation plans, then jump straight into the matching purchase flow.
               </div>
             </div>
             <div className="rounded-2xl bg-base-200/60 p-4">
-              <div className="font-semibold">Purchase support</div>
+              <div className="font-semibold">Buy with confidence</div>
               <div className="mt-2 text-sm leading-7 text-base-content/65">
-                Flight lookup helps lock in departure timing before policy purchase.
+                Flight lookup locks the departure timestamp before checkout so the policy and oracle use the same
+                record.
               </div>
             </div>
             <div className="rounded-2xl bg-base-200/60 p-4">
-              <div className="font-semibold">MVP scope</div>
+              <div className="font-semibold">Watch the payout</div>
               <div className="mt-2 text-sm leading-7 text-base-content/65">
-                Oracle checks and payout fulfillment are still routed through admin tooling in the current demo.
+                The wallet USDC balance updates live so premium debits and payout credits are easy to verify.
               </div>
             </div>
           </div>

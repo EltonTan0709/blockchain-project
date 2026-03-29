@@ -26,11 +26,6 @@ const MENU_LINKS: HeaderMenuLink[] = [
     exactMatch: true,
   },
   {
-    label: "Manage Flights",
-    href: "/admin/flights",
-    adminOnly: true,
-  },
-  {
     label: "Oracle Ops",
     href: "/admin/oracle",
     adminOnly: true,
@@ -129,7 +124,7 @@ export const Header = () => {
           </div>
           <div className="flex flex-col">
             <span className="font-bold leading-tight">FlightSure MVP</span>
-            <span className="text-xs">Flight insurance demo</span>
+            <span className="text-xs">Flight insurance console</span>
           </div>
         </Link>
         <ul className="hidden lg:flex lg:flex-nowrap menu menu-horizontal px-1 gap-2">

@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowPathIcon,
-  ArrowTrendingUpIcon,
-  BanknotesIcon,
-  CheckBadgeIcon,
-  ClockIcon,
-  ShieldCheckIcon,
-} from "@heroicons/react/24/solid";
+import { ArrowPathIcon, ArrowTrendingUpIcon, BanknotesIcon, ClockIcon } from "@heroicons/react/24/solid";
 import { GAS_BENCHMARKS, type GasBenchmarkKey } from "~~/lib/performanceBenchmarks";
 
 type GasMetricSnapshot = {
@@ -135,18 +128,6 @@ const formatEth = (value: number | null | undefined) => {
   return `${value.toFixed(6)} ETH`;
 };
 
-const formatGwei = (value: number | null | undefined) => {
-  if (value === undefined) {
-    return "Loading...";
-  }
-
-  if (value === null) {
-    return "No data";
-  }
-
-  return `${value.toFixed(2)} gwei`;
-};
-
 const getBenchmarkStatus = (averageGasUsed: number | null | undefined, budget: number) => {
   if (averageGasUsed === undefined) {
     return {
@@ -229,7 +210,6 @@ function GasMetricCard({
         </div>
         <div>Benchmark ceiling: {benchmark.gasBudget.toLocaleString()} gas</div>
         <div>Controlled cost ceiling @20 gwei: {formatEth(benchmark.maxCostEthAt20Gwei)}</div>
-        {metric?.sampleCount ? <div>Observed avg fee: {formatEth(metric.averageTransactionFeeEth)}</div> : null}
       </div>
     </div>
   );
@@ -342,8 +322,8 @@ export default function AdminDashboard() {
             </div>
             <h1 className="mt-5 text-4xl font-black tracking-tight md:text-5xl">Insurance Operations Dashboard</h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-base-content/70">
-              Monitor live contract metrics, compare oracle outcomes against the current flight dataset, and track gas
-              efficiency from Ponder-indexed transaction receipts stored in Postgres.
+              Monitor live contract metrics, follow oracle outcomes, and show benchmarked gas efficiency from
+              Ponder-indexed transaction receipts.
             </p>
 
             <div className="mt-6 flex flex-wrap items-center gap-3 text-sm text-base-content/60">
@@ -352,10 +332,7 @@ export default function AdminDashboard() {
             </div>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/admin/flights" className="btn btn-primary h-14 rounded-2xl px-6 text-base">
-                Manage Flights
-              </Link>
-              <Link href="/admin/oracle" className="btn btn-outline btn-primary h-14 rounded-2xl px-6 text-base">
+              <Link href="/admin/oracle" className="btn btn-primary h-14 rounded-2xl px-6 text-base">
                 Oracle Ops
               </Link>
               <Link href="/pool" className="btn btn-outline h-14 rounded-2xl px-6 text-base">
@@ -529,7 +506,7 @@ export default function AdminDashboard() {
       <section>
         <SectionIntro
           title="Efficiency And Cost"
-          description="Observed gas usage comes from Ponder-indexed receipts in Postgres. Controlled benchmark ceilings come from Hardhat tests and should be used as the efficiency baseline for the rubric."
+          description="Observed gas usage comes from Ponder-indexed receipts in Postgres. Benchmark ceilings come from controlled Hardhat tests and act as the efficiency baseline."
         />
 
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -542,25 +519,12 @@ export default function AdminDashboard() {
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
         <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
-          <h2 className="text-2xl font-bold">Quick Actions</h2>
+          <h2 className="text-2xl font-bold">Operations</h2>
           <p className="mt-2 text-sm leading-7 text-base-content/65">
-            Jump straight into the most important operational tasks for the MVP.
+            Open the core admin views for pool oversight and oracle settlement review.
           </p>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Link
-              href="/admin/flights"
-              className="rounded-3xl border border-base-300 bg-base-200/60 p-5 transition hover:-translate-y-1 hover:shadow-md"
-            >
-              <div className="flex items-center gap-3 text-primary">
-                <ShieldCheckIcon className="h-6 w-6" />
-                <div className="text-lg font-semibold">Flight Operations</div>
-              </div>
-              <p className="mt-3 text-sm leading-7 text-base-content/65">
-                Update statuses, review history, and improve the oracle dataset that drives evaluation metrics.
-              </p>
-            </Link>
-
             <Link
               href="/pool"
               className="rounded-3xl border border-base-300 bg-base-200/60 p-5 transition hover:-translate-y-1 hover:shadow-md"
@@ -580,43 +544,29 @@ export default function AdminDashboard() {
             >
               <div className="flex items-center gap-3 text-primary">
                 <ClockIcon className="h-6 w-6" />
-                <div className="text-lg font-semibold">Oracle Automation</div>
+                <div className="text-lg font-semibold">Oracle History</div>
               </div>
               <p className="mt-3 text-sm leading-7 text-base-content/65">
-                Review source votes, consensus outcomes, and the on-chain oracle settlement flow end to end.
+                Inspect source votes, Chainlink requests, and final settlement outcomes in one timeline.
               </p>
             </Link>
-
-            <div className="rounded-3xl border border-base-300 bg-base-200/40 p-5">
-              <div className="flex items-center gap-3 text-base-content/70">
-                <CheckBadgeIcon className="h-6 w-6" />
-                <div className="text-lg font-semibold">Evaluation Notes</div>
-              </div>
-              <p className="mt-3 text-sm leading-7 text-base-content/65">
-                True historical oracle accuracy still needs a snapshot of the source data at fulfillment time. The
-                current dashboard metric reports consistency against the latest stored flight record.
-              </p>
-            </div>
           </div>
         </div>
 
         <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
-          <h2 className="text-2xl font-bold">Metric Notes</h2>
+          <h2 className="text-2xl font-bold">Methodology</h2>
           <div className="mt-5 space-y-4">
             <div className="rounded-2xl bg-base-200/60 p-4">
-              <div className="font-semibold">Rubric fit</div>
+              <div className="font-semibold">Oracle consistency</div>
               <div className="mt-2 text-sm leading-7 text-base-content/65">
-                The dashboard is now split around the rubric categories directly: evaluation quality, economic
-                performance, operational throughput, and efficiency/cost. That makes it easier to explain exactly what
-                each metric is evidence for in your write-up or presentation.
+                This compares each fulfilled on-chain decision against the current validated flight record for outcome,
+                delay minutes, and payout result.
               </div>
             </div>
             <div className="rounded-2xl bg-base-200/60 p-4">
-              <div className="font-semibold">Observed gas profile</div>
+              <div className="font-semibold">Gas measurement</div>
               <div className="mt-2 space-y-1 text-sm leading-7 text-base-content/65">
                 <div>Average gas used: {formatGas(metrics?.gas.overall.averageGasUsed)}</div>
-                <div>Average gas price: {formatGwei(metrics?.gas.overall.averageGasPriceGwei)}</div>
-                <div>Average fee per tx: {formatEth(metrics?.gas.overall.averageTransactionFeeEth)}</div>
                 <div>Total gas observed: {formatCount(metrics?.gas.overall.totalGasUsed)}</div>
                 <div>
                   Gas source:{" "}
@@ -627,24 +577,11 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="rounded-2xl bg-base-200/60 p-4">
-              <div className="font-semibold">Why benchmarking matters</div>
+              <div className="font-semibold">Benchmarks</div>
               <div className="mt-2 space-y-1 text-sm leading-7 text-base-content/65">
-                <div>Observed averages show how the live Sepolia deployment behaves.</div>
-                <div>
-                  Controlled benchmarks show the ceiling you are willing to accept under repeatable test conditions.
-                </div>
-                <div>
-                  For the rubric, both matter: observed performance plus a clear benchmark target is stronger than raw
-                  numbers alone.
-                </div>
-              </div>
-            </div>
-            <div className="rounded-2xl bg-base-200/60 p-4">
-              <div className="font-semibold">Measurement caveat</div>
-              <div className="mt-2 space-y-1 text-sm leading-7 text-base-content/65">
-                <div>Oracle consistency is a current-state evaluation metric, not perfect historical accuracy.</div>
-                <div>True accuracy would require snapshotting the source flight data at oracle fulfillment time.</div>
-                <div>That would be the strongest next upgrade if you want the evaluation story to be tighter.</div>
+                <div>Observed gas reflects recent Sepolia transactions.</div>
+                <div>Benchmark ceilings come from repeatable Hardhat test runs.</div>
+                <div>Comparing both shows how live usage tracks against the planned budget.</div>
               </div>
             </div>
           </div>

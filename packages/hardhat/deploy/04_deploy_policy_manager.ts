@@ -6,7 +6,7 @@ const deployPolicyManager: DeployFunction = async function (hre: HardhatRuntimeE
   const { deploy, get, log } = deployments;
   const { deployer } = await getNamedAccounts();
   const demoOracleMode = process.env.ORACLE_DEMO_MODE === "true";
-  const demoOracleDelaySeconds = Number(process.env.ORACLE_DEMO_DELAY_SECONDS ?? "60");
+  const demoOracleDelaySeconds = Number(process.env.ORACLE_DEMO_DELAY_SECONDS ?? "30");
   const oracleAutomationAddress = process.env.ORACLE_AUTOMATION_ADDRESS?.trim() || deployer;
   const chainlinkFunctionsRouter = process.env.CHAINLINK_FUNCTIONS_ROUTER?.trim() || oracleAutomationAddress;
   const chainlinkSubscriptionId = process.env.CHAINLINK_FUNCTIONS_SUBSCRIPTION_ID?.trim();

@@ -262,8 +262,7 @@ export default function DepositLiquidity() {
             </div>
             <h1 className="mt-5 text-4xl font-black tracking-tight md:text-5xl">Deposit Liquidity Into The Pool</h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-base-content/70">
-              Fund the insurance pool with MockUSDC so the demo has capital available for policy payouts and operational
-              testing.
+              Fund the insurance pool with MockUSDC so payout coverage and working capital stay available on-chain.
             </p>
           </div>
 
@@ -416,7 +415,7 @@ export default function DepositLiquidity() {
           <div className="mt-5 rounded-2xl bg-base-200/60 p-4 text-sm">
             <div className="font-semibold">Operational note</div>
             <div className="mt-2 leading-7 text-base-content/65">
-              Deposited liquidity increases the pool balance used by the demo insurance system. Approval is only needed
+              Deposited liquidity increases the pool balance available for policy settlement. Approval is only needed
               when your current allowance does not already cover the deposit amount.
             </div>
           </div>

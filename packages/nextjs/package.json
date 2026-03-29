@@ -9,6 +9,7 @@
     "format": "prettier --write . '!(node_modules|.next|contracts)/**/*'",
     "lint": "next lint",
     "oracle:worker": "tsx scripts/oracleWorker.ts",
+    "oracle:seed-split-vote": "tsx scripts/seedSplitVoteFlight.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
