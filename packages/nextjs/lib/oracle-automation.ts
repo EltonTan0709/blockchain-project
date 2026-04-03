@@ -1,12 +1,12 @@
-import { type FlightStatus, OracleRequestAuditStatus } from "@prisma/client";
-import { type Address, createPublicClient, createWalletClient, encodeAbiParameters, http } from "viem";
+import { type FlightStatus, OracleRequestAuditStatus, Prisma } from "@prisma/client";
+import { createPublicClient, createWalletClient, encodeAbiParameters, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import deployedContracts from "~~/contracts/deployedContracts";
-import { getOracleDecisionForPolicy } from "~~/lib/oracle";
+import { getOracleDecisionForPolicy, getOracleDecisionReason, isOracleDecisionPayoutEligible } from "~~/lib/oracle";
 import { ORACLE_REQUEST_STATUS, type OracleAuditMetadata } from "~~/lib/oracle-audit";
+import { formatOracleWorkerError } from "~~/lib/oracle-display";
 import { prisma } from "~~/lib/prisma";
+import { getRuntimeContractAddresses } from "~~/lib/runtime-contract-addresses";
 import scaffoldConfig from "~~/scaffold.config";
-import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth/networks";
 
 type PolicySnapshot = {
@@ -154,24 +154,8 @@ const rpcOverrides = scaffoldConfig.rpcOverrides as Record<number, string> | und
 const fallbackRpcUrl =
   rpcOverrides?.[targetNetwork.id] ?? getAlchemyHttpUrl(targetNetwork.id) ?? targetNetwork.rpcUrls.default.http[0];
 
-const configuredContracts = (
-  deployedContracts as Record<
-    number,
-    {
-      OracleCoordinator?: { address: string };
-      PolicyManager?: { address: string };
-      ChainlinkDemoOracleConsumer?: { address: string };
-    }
-  >
-)[targetNetwork.id];
-
-const oracleCoordinatorAddress = configuredContracts?.OracleCoordinator?.address as Address | undefined;
-const policyManagerAddress = (configuredContracts?.PolicyManager?.address ?? CONTRACTS.PolicyManager) as
-  | Address
-  | undefined;
-const chainlinkDemoOracleConsumerAddress = configuredContracts?.ChainlinkDemoOracleConsumer?.address as
-  | Address
-  | undefined;
+const { oracleCoordinatorAddress, policyManagerAddress, chainlinkDemoOracleConsumerAddress } =
+  getRuntimeContractAddresses();
 const isChainlinkFunctionsEnabled = process.env.CHAINLINK_FUNCTIONS_ENABLED === "true";
 
 const publicClient = createPublicClient({
@@ -261,7 +245,7 @@ const upsertAuditRecord = async (params: {
   errorMessage?: string | null;
   metadata?: OracleAuditMetadata | null;
 }) => {
-  return prisma.oracleRequestAudit.upsert({
+  const auditRecord = await prisma.oracleRequestAudit.upsert({
     where: {
       chainId_policyId: {
         chainId: targetNetwork.id,
@@ -311,6 +295,37 @@ const upsertAuditRecord = async (params: {
       metadata: params.metadata ?? undefined,
     },
   });
+
+  if (params.metadata === undefined) {
+    return auditRecord;
+  }
+
+  const normalizedMetadata =
+    params.metadata === null ? Prisma.DbNull : (JSON.parse(JSON.stringify(params.metadata)) as Prisma.InputJsonValue);
+
+  await prisma.oracleRequestAudit.update({
+    where: {
+      chainId_policyId: {
+        chainId: targetNetwork.id,
+        policyId: params.policyId,
+      },
+    },
+    data: {
+      metadata: Prisma.DbNull,
+    },
+  });
+
+  return prisma.oracleRequestAudit.update({
+    where: {
+      chainId_policyId: {
+        chainId: targetNetwork.id,
+        policyId: params.policyId,
+      },
+    },
+    data: {
+      metadata: normalizedMetadata,
+    },
+  });
 };
 
 const getRetryCount = async (policyId: bigint) => {
@@ -325,6 +340,53 @@ const getRetryCount = async (policyId: bigint) => {
 
   const metadata = existingAudit?.metadata as OracleAuditMetadata | null;
   return metadata?.retryCount ?? 0;
+};
+
+const compareSourcePriority = (leftId: string, rightId: string) => {
+  const sourcePriority = ["flight_status_board", "latest_ops_update", "history_parser"];
+  return sourcePriority.indexOf(leftId) - sourcePriority.indexOf(rightId);
+};
+
+const doesSourceSnapshotMatchFinalOutcome = (
+  sources: OracleAuditMetadata["sources"] | undefined,
+  finalOutcome: number,
+  winningVotes?: number,
+  totalVotes?: number,
+) => {
+  if (!sources?.length || !winningVotes || !totalVotes) {
+    return false;
+  }
+
+  const outcomeVotes = new Map<number, NonNullable<OracleAuditMetadata["sources"]>>();
+
+  for (const source of sources) {
+    const existingVotes = outcomeVotes.get(source.outcome) ?? [];
+    existingVotes.push(source);
+    outcomeVotes.set(source.outcome, existingVotes);
+  }
+
+  const rankedOutcomes = [...outcomeVotes.entries()].sort((left, right) => {
+    if (right[1].length !== left[1].length) {
+      return right[1].length - left[1].length;
+    }
+
+    return compareSourcePriority(left[1][0]?.sourceId ?? "", right[1][0]?.sourceId ?? "");
+  });
+
+  const [winningOutcome, winningSources] = rankedOutcomes[0] ?? [];
+  if (winningOutcome === undefined || !winningSources) {
+    return false;
+  }
+
+  return winningOutcome === finalOutcome && winningSources.length === winningVotes && sources.length === totalVotes;
+};
+
+const getVoteSuffix = (winningVotes?: number, totalVotes?: number) => {
+  if (!winningVotes || !totalVotes) {
+    return "";
+  }
+
+  return ` Vote: ${winningVotes}/${totalVotes} sources agreed.`;
 };
 
 export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResult> => {
@@ -390,6 +452,55 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
       const restoredDecision = needsDecisionSnapshot
         ? await getOracleDecisionForPolicy(policyId).catch(() => null)
         : null;
+      const finalOutcome = request.outcome;
+      const finalDelayMinutes = Number(request.delayMinutes);
+      const finalPayoutEligible = isOracleDecisionPayoutEligible(policy, finalOutcome, finalDelayMinutes);
+      const predictedOutcome = existingAudit?.outcome ?? restoredDecision?.oracle.outcome ?? null;
+      const predictedDelayMinutes = existingAudit?.delayMinutes ?? restoredDecision?.oracle.delayMinutes ?? null;
+      const predictedPayoutEligible = existingAudit?.payoutEligible ?? restoredDecision?.oracle.payoutEligible ?? null;
+      const flightStatus =
+        existingAudit?.flightStatus ?? (restoredDecision?.flight.currentStatus as FlightStatus | undefined) ?? null;
+      const predictionMatchesFinalOutcome =
+        predictedOutcome === finalOutcome &&
+        predictedDelayMinutes === finalDelayMinutes &&
+        (predictedPayoutEligible == null || predictedPayoutEligible === finalPayoutEligible);
+      const trustedWinningVotes = predictionMatchesFinalOutcome
+        ? (existingMetadata?.winningVotes ?? restoredDecision?.oracle.winningVotes)
+        : undefined;
+      const trustedTotalVotes = predictionMatchesFinalOutcome
+        ? (existingMetadata?.totalVotes ?? restoredDecision?.oracle.totalVotes)
+        : undefined;
+      const candidateSources = existingMetadata?.sources ?? restoredDecision?.sources;
+      const shouldKeepSourceSnapshot =
+        predictionMatchesFinalOutcome &&
+        doesSourceSnapshotMatchFinalOutcome(candidateSources, finalOutcome, trustedWinningVotes, trustedTotalVotes);
+      const finalReason = predictionMatchesFinalOutcome
+        ? (existingMetadata?.reason ??
+          restoredDecision?.oracle.reason ??
+          `${getOracleDecisionReason(policy, finalOutcome, finalDelayMinutes, flightStatus)}${getVoteSuffix(
+            trustedWinningVotes,
+            trustedTotalVotes,
+          )}`)
+        : getOracleDecisionReason(policy, finalOutcome, finalDelayMinutes, flightStatus);
+      const finalMetadata: OracleAuditMetadata | undefined =
+        existingMetadata || restoredDecision
+          ? {
+              requestTransactionHash: existingMetadata?.requestTransactionHash,
+              callbackTransactionHash: existingMetadata?.callbackTransactionHash,
+              oracleReadyTimestamp:
+                existingMetadata?.oracleReadyTimestamp ?? restoredDecision?.policy.oracleReadyTimestamp,
+              workerMode: existingMetadata?.workerMode,
+              retryCount: existingMetadata?.retryCount,
+              reason: finalReason,
+              ...(shouldKeepSourceSnapshot
+                ? {
+                    sources: candidateSources,
+                    winningVotes: trustedWinningVotes,
+                    totalVotes: trustedTotalVotes,
+                  }
+                : {}),
+            }
+          : undefined;
 
       await upsertAuditRecord({
         policyId,
@@ -405,31 +516,15 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
             ? `${restoredDecision.policy.flightNumber}:${restoredDecision.policy.departureTimestamp}`
             : `${policy.flightNumber}:${policy.departureTimestamp.toString()}`),
         flightNumber: existingAudit?.flightNumber ?? restoredDecision?.flight.flightNumber ?? policy.flightNumber,
-        flightStatus:
-          existingAudit?.flightStatus ?? (restoredDecision?.flight.currentStatus as FlightStatus | undefined) ?? null,
+        flightStatus,
         latestNote: existingAudit?.latestNote ?? restoredDecision?.flight.latestNote ?? null,
-        outcome: request.outcome,
-        delayMinutes: Number(request.delayMinutes),
-        payoutEligible: existingAudit?.payoutEligible ?? restoredDecision?.oracle.payoutEligible ?? null,
+        outcome: finalOutcome,
+        delayMinutes: finalDelayMinutes,
+        payoutEligible: finalPayoutEligible,
         payoutExecuted: request.payoutExecuted,
         payoutAmount: request.payoutAmount.toString(),
         transactionHash: existingAudit?.transactionHash ?? null,
-        metadata:
-          existingMetadata || restoredDecision
-            ? {
-                ...(existingMetadata ?? {}),
-                ...(restoredDecision
-                  ? {
-                      sources: existingMetadata?.sources ?? restoredDecision.sources,
-                      reason: existingMetadata?.reason ?? restoredDecision.oracle.reason,
-                      winningVotes: existingMetadata?.winningVotes ?? restoredDecision.oracle.winningVotes,
-                      totalVotes: existingMetadata?.totalVotes ?? restoredDecision.oracle.totalVotes,
-                      oracleReadyTimestamp:
-                        existingMetadata?.oracleReadyTimestamp ?? restoredDecision.policy.oracleReadyTimestamp,
-                    }
-                  : {}),
-              }
-            : undefined,
+        metadata: finalMetadata,
       });
       continue;
     }
@@ -453,20 +548,24 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
       continue;
     }
 
+    let decisionSnapshot: Awaited<ReturnType<typeof getOracleDecisionForPolicy>> | null = null;
+    let flightKey = `${policy.flightNumber}:${policy.departureTimestamp.toString()}`;
+    let baseMetadata: OracleAuditMetadata | null = null;
+    let requestTransactionHash: `0x${string}` | null = null;
+
     try {
-      const decision = await getOracleDecisionForPolicy(policyId);
-      const flightKey = `${decision.policy.flightNumber}:${decision.policy.departureTimestamp}`;
-      const baseMetadata: OracleAuditMetadata = {
-        sources: decision.sources,
-        reason: decision.oracle.reason,
-        winningVotes: decision.oracle.winningVotes,
-        totalVotes: decision.oracle.totalVotes,
-        oracleReadyTimestamp: decision.policy.oracleReadyTimestamp,
+      decisionSnapshot = await getOracleDecisionForPolicy(policyId);
+      flightKey = `${decisionSnapshot.policy.flightNumber}:${decisionSnapshot.policy.departureTimestamp}`;
+      baseMetadata = {
+        sources: decisionSnapshot.sources,
+        reason: decisionSnapshot.oracle.reason,
+        winningVotes: decisionSnapshot.oracle.winningVotes,
+        totalVotes: decisionSnapshot.oracle.totalVotes,
+        oracleReadyTimestamp: decisionSnapshot.policy.oracleReadyTimestamp,
         workerMode: isChainlinkFunctionsEnabled ? "chainlink_functions_worker" : "simulated_consensus_worker",
       };
 
       let requestState = request;
-      let requestTransactionHash: `0x${string}` | null = null;
 
       if (!requestState.pending && !requestState.fulfilled) {
         requestTransactionHash = await walletClient.writeContract({
@@ -492,14 +591,14 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
           requestStatus: getRequestStatusCode(requestState),
           auditStatus: OracleRequestAuditStatus.AWAITING_CHAINLINK,
           usedChainlink: false,
-          flightId: decision.flight.id,
+          flightId: decisionSnapshot.flight.id,
           flightKey,
-          flightNumber: decision.flight.flightNumber,
-          flightStatus: decision.flight.currentStatus as FlightStatus,
-          latestNote: decision.flight.latestNote,
-          outcome: decision.oracle.outcome,
-          delayMinutes: decision.oracle.delayMinutes,
-          payoutEligible: decision.oracle.payoutEligible,
+          flightNumber: decisionSnapshot.flight.flightNumber,
+          flightStatus: decisionSnapshot.flight.currentStatus as FlightStatus,
+          latestNote: decisionSnapshot.flight.latestNote,
+          outcome: decisionSnapshot.oracle.outcome,
+          delayMinutes: decisionSnapshot.oracle.delayMinutes,
+          payoutEligible: decisionSnapshot.oracle.payoutEligible,
           transactionHash: requestTransactionHash,
           metadata: {
             ...baseMetadata,
@@ -548,14 +647,14 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
           requestStatus: getRequestStatusCode(requestState),
           auditStatus: OracleRequestAuditStatus.AWAITING_CHAINLINK,
           usedChainlink: true,
-          flightId: decision.flight.id,
+          flightId: decisionSnapshot.flight.id,
           flightKey,
-          flightNumber: decision.flight.flightNumber,
-          flightStatus: decision.flight.currentStatus as FlightStatus,
-          latestNote: decision.flight.latestNote,
-          outcome: decision.oracle.outcome,
-          delayMinutes: decision.oracle.delayMinutes,
-          payoutEligible: decision.oracle.payoutEligible,
+          flightNumber: decisionSnapshot.flight.flightNumber,
+          flightStatus: decisionSnapshot.flight.currentStatus as FlightStatus,
+          latestNote: decisionSnapshot.flight.latestNote,
+          outcome: decisionSnapshot.oracle.outcome,
+          delayMinutes: decisionSnapshot.oracle.delayMinutes,
+          payoutEligible: decisionSnapshot.oracle.payoutEligible,
           transactionHash: chainlinkRequestTransactionHash ?? requestTransactionHash ?? null,
           metadata: {
             ...baseMetadata,
@@ -573,7 +672,7 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
         address: chainlinkDemoOracleConsumerAddress,
         abi: chainlinkDemoOracleConsumerAbi,
         functionName: "submitConsensusResult",
-        args: [policyId, decision.oracle.outcome, BigInt(decision.oracle.delayMinutes)],
+        args: [policyId, decisionSnapshot.oracle.outcome, BigInt(decisionSnapshot.oracle.delayMinutes)],
         chain: targetNetwork,
         account: walletClient.account,
       });
@@ -593,14 +692,14 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
         requestStatus: ORACLE_REQUEST_STATUS.FULFILLED,
         auditStatus: OracleRequestAuditStatus.FULFILLED,
         usedChainlink: false,
-        flightId: decision.flight.id,
+        flightId: decisionSnapshot.flight.id,
         flightKey,
-        flightNumber: decision.flight.flightNumber,
-        flightStatus: decision.flight.currentStatus as FlightStatus,
-        latestNote: decision.flight.latestNote,
+        flightNumber: decisionSnapshot.flight.flightNumber,
+        flightStatus: decisionSnapshot.flight.currentStatus as FlightStatus,
+        latestNote: decisionSnapshot.flight.latestNote,
         outcome: finalRequestState.outcome,
         delayMinutes: Number(finalRequestState.delayMinutes),
-        payoutEligible: decision.oracle.payoutEligible,
+        payoutEligible: decisionSnapshot.oracle.payoutEligible,
         payoutExecuted: finalRequestState.payoutExecuted,
         payoutAmount: finalRequestState.payoutAmount.toString(),
         transactionHash: callbackTransactionHash,
@@ -614,7 +713,8 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
       result.fulfilledPolicies += 1;
     } catch (error) {
       const retryCount = await getRetryCount(policyId);
-      const message = error instanceof Error ? error.message : "Automatic oracle processing failed.";
+      const rawMessage = error instanceof Error ? error.message : "Automatic oracle processing failed.";
+      const message = formatOracleWorkerError(rawMessage) ?? rawMessage;
 
       await upsertAuditRecord({
         policyId,
@@ -622,10 +722,18 @@ export const processDueOracleRequests = async (): Promise<OracleWorkerCycleResul
         requestStatus: ORACLE_REQUEST_STATUS.FAILED,
         auditStatus: OracleRequestAuditStatus.FAILED,
         usedChainlink: isChainlinkFunctionsEnabled,
-        flightKey: `${policy.flightNumber}:${policy.departureTimestamp.toString()}`,
-        flightNumber: policy.flightNumber,
+        flightId: decisionSnapshot?.flight.id ?? null,
+        flightKey,
+        flightNumber: decisionSnapshot?.flight.flightNumber ?? policy.flightNumber,
+        flightStatus: (decisionSnapshot?.flight.currentStatus as FlightStatus | undefined) ?? null,
+        latestNote: decisionSnapshot?.flight.latestNote ?? null,
+        outcome: decisionSnapshot?.oracle.outcome ?? null,
+        delayMinutes: decisionSnapshot?.oracle.delayMinutes ?? null,
+        payoutEligible: decisionSnapshot?.oracle.payoutEligible ?? null,
+        transactionHash: requestTransactionHash,
         errorMessage: message,
         metadata: {
+          ...(baseMetadata ?? {}),
           workerMode: isChainlinkFunctionsEnabled ? "chainlink_functions_worker" : "simulated_consensus_worker",
           retryCount: retryCount + 1,
         },

@@ -61,6 +61,27 @@ const insurancePoolAbi = [
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    type: "function",
+    name: "getRequiredReserve",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getWithdrawableAmount",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "withdrawExcessLiquidity",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
 ] as const;
 
 const formatTokenValue = (value?: bigint) => {
@@ -79,9 +100,11 @@ export default function DepositLiquidity() {
     : undefined;
 
   const [amount, setAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [status, setStatus] = useState("");
   const [approving, setApproving] = useState(false);
   const [depositing, setDepositing] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
 
   const mockUsdcAddress = chainContracts?.MockUSDC?.address as `0x${string}` | undefined;
   const insurancePoolAddress = chainContracts?.InsurancePool?.address as `0x${string}` | undefined;
@@ -95,6 +118,15 @@ export default function DepositLiquidity() {
       return 0n;
     }
   }, [amount]);
+
+  const parsedWithdrawAmount = useMemo(() => {
+    if (!withdrawAmount.trim()) return 0n;
+    try {
+      return parseUnits(withdrawAmount, TOKEN_DECIMALS);
+    } catch {
+      return 0n;
+    }
+  }, [withdrawAmount]);
 
   const { data: balance, refetch: refetchBalance } = useReadContract({
     abi: mockUsdcAbi,
@@ -119,12 +151,34 @@ export default function DepositLiquidity() {
     query: { enabled: hasLiveAddresses },
   });
 
+  const { data: requiredReserve, refetch: refetchRequiredReserve } = useReadContract({
+    abi: insurancePoolAbi,
+    address: insurancePoolAddress,
+    functionName: "getRequiredReserve",
+    query: { enabled: hasLiveAddresses },
+  });
+
+  const { data: withdrawableAmount, refetch: refetchWithdrawableAmount } = useReadContract({
+    abi: insurancePoolAbi,
+    address: insurancePoolAddress,
+    functionName: "getWithdrawableAmount",
+    query: { enabled: hasLiveAddresses },
+  });
+
   const approvedEnough = allowance !== undefined && allowance >= parsedAmount;
   const hasValidAmount = parsedAmount > 0n;
   const hasEnoughBalance = balance !== undefined && balance >= parsedAmount;
+  const hasValidWithdrawAmount = parsedWithdrawAmount > 0n;
+  const canCoverWithdraw = withdrawableAmount !== undefined && withdrawableAmount >= parsedWithdrawAmount;
 
   const refreshAll = async () => {
-    await Promise.all([refetchBalance(), refetchAllowance(), refetchPoolBalance()]);
+    await Promise.all([
+      refetchBalance(),
+      refetchAllowance(),
+      refetchPoolBalance(),
+      refetchRequiredReserve(),
+      refetchWithdrawableAmount(),
+    ]);
   };
 
   const handleApprove = async () => {
@@ -212,7 +266,52 @@ export default function DepositLiquidity() {
     }
   };
 
-  const fundingChecklist = [
+  const handleWithdraw = async () => {
+    if (!isConnected || !address) {
+      setStatus("Connect your wallet first.");
+      return;
+    }
+    if (!hasLiveAddresses) {
+      setStatus("Connect to the deployed Sepolia network first.");
+      return;
+    }
+    if (!hasValidWithdrawAmount) {
+      setStatus("Enter a valid withdrawal amount.");
+      return;
+    }
+    if (!canCoverWithdraw) {
+      setStatus("Withdrawal amount exceeds the pool's withdrawable excess.");
+      return;
+    }
+
+    try {
+      setWithdrawing(true);
+      setStatus("Waiting for withdrawal transaction...");
+
+      const txHash = await writeContractAsync({
+        abi: insurancePoolAbi,
+        address: insurancePoolAddress,
+        functionName: "withdrawExcessLiquidity",
+        args: [parsedWithdrawAmount],
+      });
+
+      if (publicClient) {
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
+
+      setStatus(`Withdrawal submitted: ${txHash}`);
+      await refreshAll();
+      setStatus("Withdrawal successful.");
+      setWithdrawAmount("");
+    } catch (error) {
+      console.error(error);
+      setStatus("Withdrawal failed or was rejected.");
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
+  const poolChecklist = [
     {
       label: "Wallet connected",
       detail: isConnected ? "Admin wallet is connected and ready." : "Connect the configured admin wallet first.",
@@ -244,13 +343,29 @@ export default function DepositLiquidity() {
         : "Approve the pool contract before depositing.",
       done: approvedEnough,
     },
+    {
+      label: "Reserve protected",
+      detail:
+        requiredReserve !== undefined
+          ? `${formatUnits(requiredReserve, TOKEN_DECIMALS)} USDC is currently reserved for active policies.`
+          : "Load the pool contracts to read the active policy reserve.",
+      done: requiredReserve !== undefined,
+    },
+    {
+      label: "Withdrawable excess",
+      detail:
+        withdrawableAmount !== undefined
+          ? `${formatUnits(withdrawableAmount, TOKEN_DECIMALS)} USDC can be withdrawn without touching reserved coverage.`
+          : "Load the pool contracts to calculate safe withdrawal headroom.",
+      done: withdrawableAmount !== undefined,
+    },
   ];
 
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
       <section className="relative overflow-hidden rounded-[2.5rem] border border-base-300 bg-base-100 shadow-2xl">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.12),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_30%)]" />
-        <div className="relative grid gap-8 px-8 py-8 lg:grid-cols-[minmax(0,1.15fr)_22rem] lg:items-end">
+        <div className="relative grid gap-8 px-8 py-8 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)] xl:grid-cols-[minmax(0,1fr)_minmax(24rem,30rem)] lg:items-end">
           <div>
             <Link href="/admin" className="btn btn-outline btn-sm rounded-full">
               <ArrowLeftIcon className="h-4 w-4" />
@@ -260,20 +375,23 @@ export default function DepositLiquidity() {
             <div className="mt-5 badge badge-outline border-secondary/30 bg-secondary/10 px-4 py-4 text-secondary">
               Liquidity Pool
             </div>
-            <h1 className="mt-5 text-4xl font-black tracking-tight md:text-5xl">Deposit Liquidity Into The Pool</h1>
+            <h1 className="mt-5 text-4xl font-black tracking-tight md:text-5xl">Manage Liquidity Pool</h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-base-content/70">
-              Fund the insurance pool with MockUSDC so payout coverage and working capital stay available on-chain.
+              Fund the insurance pool with MockUSDC, then withdraw only the excess capital that sits above active policy
+              reserve.
             </p>
           </div>
 
-          <div className="grid gap-4">
+          <div className="grid gap-4 xl:grid-cols-2">
             <div className="rounded-3xl border border-base-300 bg-base-100/90 p-5 shadow-lg">
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-primary/10 p-3 text-primary">
                   <BanknotesIcon className="h-6 w-6" />
                 </div>
                 <div>
-                  <div className="text-sm uppercase tracking-[0.18em] text-base-content/45">Pool Balance</div>
+                  <div className="text-xs uppercase leading-5 tracking-[0.14em] text-base-content/45 break-words">
+                    Pool Balance
+                  </div>
                   <div className="mt-1 text-2xl font-black">{formatTokenValue(poolBalance)}</div>
                 </div>
               </div>
@@ -284,8 +402,36 @@ export default function DepositLiquidity() {
                   <ShieldCheckIcon className="h-6 w-6" />
                 </div>
                 <div>
-                  <div className="text-sm uppercase tracking-[0.18em] text-base-content/45">Wallet Balance</div>
+                  <div className="text-xs uppercase leading-5 tracking-[0.14em] text-base-content/45 break-words">
+                    Wallet Balance
+                  </div>
                   <div className="mt-1 text-2xl font-black">{formatTokenValue(balance)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-3xl border border-base-300 bg-base-100/90 p-5 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-warning/10 p-3 text-warning">
+                  <ShieldCheckIcon className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="text-xs uppercase leading-5 tracking-[0.14em] text-base-content/45 break-words">
+                    Required Reserve
+                  </div>
+                  <div className="mt-1 text-2xl font-black">{formatTokenValue(requiredReserve)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-3xl border border-base-300 bg-base-100/90 p-5 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-secondary/10 p-3 text-secondary">
+                  <BanknotesIcon className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="text-xs uppercase leading-5 tracking-[0.14em] text-base-content/45 break-words">
+                    Withdrawable Excess
+                  </div>
+                  <div className="mt-1 text-2xl font-black">{formatTokenValue(withdrawableAmount)}</div>
                 </div>
               </div>
             </div>
@@ -293,7 +439,7 @@ export default function DepositLiquidity() {
         </div>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.05fr)_minmax(18rem,0.9fr)]">
         <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
           <h2 className="text-2xl font-bold">Fund The Pool</h2>
           <p className="mt-2 text-sm leading-7 text-base-content/65">
@@ -392,9 +538,65 @@ export default function DepositLiquidity() {
         </div>
 
         <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
-          <h2 className="text-2xl font-bold">Funding Checklist</h2>
+          <h2 className="text-2xl font-bold">Withdraw Excess Capital</h2>
+          <p className="mt-2 text-sm leading-7 text-base-content/65">
+            Owner withdrawals are limited on-chain to the pool balance that remains after active policy coverage is
+            reserved.
+          </p>
+
+          <div className="mt-6 space-y-5">
+            <div>
+              <label className="mb-2 block text-sm font-medium">Withdrawal Amount (USDC)</label>
+              <input
+                type="text"
+                value={withdrawAmount}
+                onChange={e => setWithdrawAmount(e.target.value)}
+                placeholder="250"
+                className="input input-bordered h-16 w-full rounded-2xl text-lg font-medium"
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl bg-base-200/70 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-base-content/45">Required Reserve</div>
+                <div className="mt-2 text-xl font-bold">{formatTokenValue(requiredReserve)}</div>
+              </div>
+              <div className="rounded-2xl bg-base-200/70 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-base-content/45">Safe To Withdraw</div>
+                <div className="mt-2 text-xl font-bold">{formatTokenValue(withdrawableAmount)}</div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-base-200/60 p-4 text-sm">
+              <div className="font-semibold">How the cap works</div>
+              <div className="mt-2 leading-7 text-base-content/65">
+                The contract keeps active policy coverage reserved. Only the excess above that reserve can be withdrawn,
+                so the pool cannot be drained below currently outstanding exposure.
+              </div>
+            </div>
+
+            {hasValidWithdrawAmount && !canCoverWithdraw && isConnected && (
+              <div className="rounded-2xl border border-error/30 bg-error/10 p-4 text-sm text-error">
+                This amount is higher than the pool&apos;s current withdrawable excess.
+              </div>
+            )}
+
+            <button
+              onClick={handleWithdraw}
+              disabled={
+                !isConnected || !hasLiveAddresses || !hasValidWithdrawAmount || !canCoverWithdraw || withdrawing
+              }
+              className="btn btn-accent h-14 rounded-2xl px-6"
+            >
+              {withdrawing ? "Withdrawing..." : "Withdraw Excess Liquidity"}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-[2rem] border border-base-300 bg-base-100 p-6 shadow-sm">
+          <h2 className="text-2xl font-bold">Pool Safety Snapshot</h2>
           <div className="mt-5 space-y-3">
-            {fundingChecklist.map(item => (
+            {poolChecklist.map(item => (
               <div
                 key={item.label}
                 className={`flex items-start gap-3 rounded-2xl border p-4 ${item.done ? "border-success/20 bg-success/10" : "border-base-300 bg-base-200/40"}`}
@@ -415,8 +617,8 @@ export default function DepositLiquidity() {
           <div className="mt-5 rounded-2xl bg-base-200/60 p-4 text-sm">
             <div className="font-semibold">Operational note</div>
             <div className="mt-2 leading-7 text-base-content/65">
-              Deposited liquidity increases the pool balance available for policy settlement. Approval is only needed
-              when your current allowance does not already cover the deposit amount.
+              Loss ratio and pending claims still matter operationally, but the hard withdrawal guard now comes from
+              live on-chain active coverage reserve instead of a manual estimate.
             </div>
           </div>
         </div>

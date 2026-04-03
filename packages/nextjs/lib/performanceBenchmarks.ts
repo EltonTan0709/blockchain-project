@@ -1,8 +1,8 @@
 export const GAS_BENCHMARKS = {
   buyPolicy: {
     label: "Buy Policy",
-    gasBudget: 360_000,
-    maxCostEthAt20Gwei: 0.0073,
+    gasBudget: 370_000,
+    maxCostEthAt20Gwei: 0.0075,
   },
   depositLiquidity: {
     label: "Deposit Liquidity",

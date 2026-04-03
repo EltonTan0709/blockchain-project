@@ -1474,7 +1474,7 @@ const deployedContracts = {
   },
   11155111: {
     ChainlinkDemoOracleConsumer: {
-      address: "0xb87DfCb4b76AE31dc65d242588Af2E17a79A2F76",
+      address: "0x3F8Ca869727c20E2b4D7E4756FA916EB85EcC1A4",
       abi: [
         {
           inputs: [
@@ -2189,10 +2189,10 @@ const deployedContracts = {
         transferOwnership: "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol",
         paused: "@openzeppelin/contracts/utils/Pausable.sol",
       },
-      deployedOnBlock: 10546483,
+      deployedOnBlock: 10580210,
     },
     InsurancePool: {
-      address: "0xf33CF818B8188edf692780950f8f1902Fb32b16d",
+      address: "0xB330D5d064929790F42E6cE594b9063532d3cF8E",
       abi: [
         {
           inputs: [
@@ -2275,6 +2275,37 @@ const deployedContracts = {
             },
           ],
           name: "LiquidityDeposited",
+          type: "event",
+        },
+        {
+          anonymous: false,
+          inputs: [
+            {
+              indexed: true,
+              internalType: "address",
+              name: "recipient",
+              type: "address",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "amount",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "requiredReserve",
+              type: "uint256",
+            },
+            {
+              indexed: false,
+              internalType: "uint256",
+              name: "poolBalance",
+              type: "uint256",
+            },
+          ],
+          name: "LiquidityWithdrawn",
           type: "event",
         },
         {
@@ -2389,6 +2420,32 @@ const deployedContracts = {
         {
           inputs: [],
           name: "getPoolBalance",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "getRequiredReserve",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
+          inputs: [],
+          name: "getWithdrawableAmount",
           outputs: [
             {
               internalType: "uint256",
@@ -2592,6 +2649,19 @@ const deployedContracts = {
           stateMutability: "nonpayable",
           type: "function",
         },
+        {
+          inputs: [
+            {
+              internalType: "uint256",
+              name: "amount",
+              type: "uint256",
+            },
+          ],
+          name: "withdrawExcessLiquidity",
+          outputs: [],
+          stateMutability: "nonpayable",
+          type: "function",
+        },
       ],
       inheritedFunctions: {
         owner: "@openzeppelin/contracts/access/Ownable.sol",
@@ -2599,7 +2669,7 @@ const deployedContracts = {
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         paused: "@openzeppelin/contracts/utils/Pausable.sol",
       },
-      deployedOnBlock: 10545474,
+      deployedOnBlock: 10580207,
     },
     MockUSDC: {
       address: "0xFA71294055CbAF8272269b3b875cBFFdCA382Bb6",
@@ -3033,7 +3103,7 @@ const deployedContracts = {
       deployedOnBlock: 10531314,
     },
     OracleCoordinator: {
-      address: "0x29675C0F6593D9Fd290CC4f67ac0bFB324a853D5",
+      address: "0xF6B0275B8B0C4103739EcF41D62CD78e2af71530",
       abi: [
         {
           inputs: [
@@ -3587,10 +3657,10 @@ const deployedContracts = {
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         paused: "@openzeppelin/contracts/utils/Pausable.sol",
       },
-      deployedOnBlock: 10545925,
+      deployedOnBlock: 10580208,
     },
     PolicyManager: {
-      address: "0x00b33293260232f6EC288986EdAb94C3b614E5De",
+      address: "0xFF227f485BB9A7A8752F359bB61CfFDeAc57b7F6",
       abi: [
         {
           inputs: [
@@ -4339,6 +4409,19 @@ const deployedContracts = {
           type: "function",
         },
         {
+          inputs: [],
+          name: "totalActiveCoverageAmount",
+          outputs: [
+            {
+              internalType: "uint256",
+              name: "",
+              type: "uint256",
+            },
+          ],
+          stateMutability: "view",
+          type: "function",
+        },
+        {
           inputs: [
             {
               internalType: "address",
@@ -4389,7 +4472,7 @@ const deployedContracts = {
         transferOwnership: "@openzeppelin/contracts/access/Ownable.sol",
         paused: "@openzeppelin/contracts/utils/Pausable.sol",
       },
-      deployedOnBlock: 10545927,
+      deployedOnBlock: 10580211,
     },
     YourContract: {
       address: "0x82CCE35f4542bf7aaCF1195445BD16c39B460094",

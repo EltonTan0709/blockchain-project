@@ -93,6 +93,24 @@ export const listOracleRequestAudits = async (limit = 25) => {
   return audits.map(serializeOracleRequestAudit);
 };
 
+export const listOracleRequestAuditsByPolicyIds = async (chainId: number, policyIds: bigint[]) => {
+  if (policyIds.length === 0) {
+    return [];
+  }
+
+  const audits = await prisma.oracleRequestAudit.findMany({
+    where: {
+      chainId,
+      policyId: {
+        in: policyIds,
+      },
+    },
+    orderBy: [{ policyId: "desc" }, { createdAt: "desc" }],
+  });
+
+  return audits.map(serializeOracleRequestAudit);
+};
+
 export const summarizeOracleAudits = (audits: SerializedOracleRequestAudit[]) => {
   return audits.reduce<Record<OracleRequestAuditStatus, number>>(
     (summary, audit) => {

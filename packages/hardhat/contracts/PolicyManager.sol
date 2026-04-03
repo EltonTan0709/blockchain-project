@@ -20,6 +20,7 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
     address public oracleCoordinator;
     bool public demoOracleMode;
     uint256 public demoOracleDelaySeconds = 30;
+    uint256 public totalActiveCoverageAmount;
 
     uint256 public nextPolicyId;
 
@@ -163,6 +164,7 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
             status: PolicyStatus.Active
         });
 
+        totalActiveCoverageAmount += coverageAmount;
         userPolicies[msg.sender].push(policyId);
         nextPolicyId++;
 
@@ -216,6 +218,8 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         require(block.timestamp >= _getOracleReadyTimestamp(policy), "Oracle check not ready");
 
         bool eligibleForPayout = _isEligibleForPayout(policy, outcome, delayMinutes);
+        uint256 coverageAmount = policy.coverageAmount;
+        totalActiveCoverageAmount -= coverageAmount;
 
         if (!eligibleForPayout) {
             policy.status = PolicyStatus.Expired;
@@ -224,10 +228,10 @@ contract PolicyManager is Ownable, ReentrancyGuard, Pausable {
         }
 
         policy.status = PolicyStatus.PaidOut;
-        IInsurancePool(insurancePool).payOut(policy.holder, policy.coverageAmount);
+        IInsurancePool(insurancePool).payOut(policy.holder, coverageAmount);
 
-        emit PolicyResolved(policyId, policy.holder, policy.coverageAmount, true, outcome, delayMinutes);
-        return (true, policy.coverageAmount);
+        emit PolicyResolved(policyId, policy.holder, coverageAmount, true, outcome, delayMinutes);
+        return (true, coverageAmount);
     }
 
     function getFlightKey(string memory flightNumber, uint256 departureTimestamp) public pure returns (bytes32) {

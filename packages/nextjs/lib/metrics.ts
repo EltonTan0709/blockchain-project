@@ -1,9 +1,9 @@
 import "server-only";
 import { createPublicClient, formatUnits, http, parseUnits } from "viem";
 import type { Address } from "viem";
-import deployedContracts from "~~/contracts/deployedContracts";
 import { getOracleDecisionForPolicy } from "~~/lib/oracle";
 import { prisma } from "~~/lib/prisma";
+import { getRuntimeContractAddresses } from "~~/lib/runtime-contract-addresses";
 import scaffoldConfig from "~~/scaffold.config";
 import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth/networks";
@@ -325,20 +325,7 @@ const publicClient = createPublicClient({
   transport: http(fallbackRpcUrl),
 });
 
-const configuredContracts = (
-  deployedContracts as Record<
-    number,
-    {
-      InsurancePool?: { address: string; deployedOnBlock?: number };
-      OracleCoordinator?: { address: string; deployedOnBlock?: number };
-      PolicyManager?: { address: string; deployedOnBlock?: number };
-    }
-  >
-)[targetNetwork.id];
-
-const policyManagerAddress = (configuredContracts?.PolicyManager?.address ?? CONTRACTS.PolicyManager) as Address;
-const insurancePoolAddress = (configuredContracts?.InsurancePool?.address ?? CONTRACTS.InsurancePool) as Address;
-const oracleCoordinatorAddress = configuredContracts?.OracleCoordinator?.address as Address | undefined;
+const { policyManagerAddress, insurancePoolAddress, oracleCoordinatorAddress } = getRuntimeContractAddresses();
 
 const getPolicyIds = (policyCount: number) => {
   return Array.from({ length: policyCount }, (_, index) => BigInt(index + 1));

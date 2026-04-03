@@ -1,8 +1,7 @@
 import { createPublicClient, http } from "viem";
-import deployedContracts from "~~/contracts/deployedContracts";
 import { getFlightByFlightNumber } from "~~/lib/flights";
+import { getRuntimeContractAddresses } from "~~/lib/runtime-contract-addresses";
 import scaffoldConfig from "~~/scaffold.config";
-import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth/networks";
 
 const policyManagerAbi = [
@@ -62,6 +61,8 @@ type OracleSourceDecision = {
   reason: string;
 };
 
+type OracleDecisionPolicyLike = Pick<PolicySnapshot, "policyType" | "delayThresholdMinutes">;
+
 const targetNetwork = scaffoldConfig.targetNetworks[0];
 const rpcOverrides = scaffoldConfig.rpcOverrides as Record<number, string> | undefined;
 const fallbackRpcUrl =
@@ -71,10 +72,6 @@ const publicClient = createPublicClient({
   chain: targetNetwork,
   transport: http(fallbackRpcUrl),
 });
-
-const deployedPolicyManagerAddress = (deployedContracts as Record<number, { PolicyManager?: { address: string } }>)[
-  targetNetwork.id
-]?.PolicyManager?.address;
 
 const parseDelayMinutes = (note: string | null | undefined) => {
   if (!note) {
@@ -108,14 +105,18 @@ const toOracleOutcome = (status: string) => {
   }
 };
 
-const isPayoutEligible = (policy: PolicySnapshot, oracleOutcome: number, delayMinutes: number) => {
+export const isOracleDecisionPayoutEligible = (
+  policy: OracleDecisionPolicyLike,
+  oracleOutcome: number,
+  delayMinutes: number,
+) => {
   return policy.policyType === 0
     ? oracleOutcome === 2 && delayMinutes >= Number(policy.delayThresholdMinutes)
     : oracleOutcome === 3;
 };
 
-const getReason = (
-  policy: PolicySnapshot,
+export const getOracleDecisionReason = (
+  policy: OracleDecisionPolicyLike,
   oracleOutcome: number,
   delayMinutes: number,
   flightStatus?: string | null,
@@ -189,7 +190,7 @@ const buildSourceDecisions = (
       sourceLabel: "Flight Status Board",
       outcome: toOracleOutcome(flight.currentStatus),
       delayMinutes: latestNoteDelay,
-      payoutEligible: isPayoutEligible(policy, toOracleOutcome(flight.currentStatus), latestNoteDelay),
+      payoutEligible: isOracleDecisionPayoutEligible(policy, toOracleOutcome(flight.currentStatus), latestNoteDelay),
       reason: "Uses the canonical Flight.currentStatus record plus the latest operator note.",
     },
     {
@@ -197,7 +198,7 @@ const buildSourceDecisions = (
       sourceLabel: "Latest Ops Update",
       outcome: toOracleOutcome(latestStatusUpdate?.status ?? flight.currentStatus),
       delayMinutes: parseDelayMinutes(latestStatusUpdate?.note),
-      payoutEligible: isPayoutEligible(
+      payoutEligible: isOracleDecisionPayoutEligible(
         policy,
         toOracleOutcome(latestStatusUpdate?.status ?? flight.currentStatus),
         parseDelayMinutes(latestStatusUpdate?.note),
@@ -209,7 +210,7 @@ const buildSourceDecisions = (
       sourceLabel: "History Parser",
       outcome: historyOutcome,
       delayMinutes: historyOutcome === 2 ? Math.max(...historicalDelayMinutes, latestNoteDelay, 0) : 0,
-      payoutEligible: isPayoutEligible(
+      payoutEligible: isOracleDecisionPayoutEligible(
         policy,
         historyOutcome,
         historyOutcome === 2 ? Math.max(...historicalDelayMinutes, latestNoteDelay, 0) : 0,
@@ -223,7 +224,7 @@ const buildSourceDecisions = (
 };
 
 export const getOracleDecisionForPolicy = async (policyId: bigint) => {
-  const policyManagerAddress = (deployedPolicyManagerAddress ?? CONTRACTS.PolicyManager) as `0x${string}`;
+  const { policyManagerAddress } = getRuntimeContractAddresses();
   const policy = (await publicClient.readContract({
     address: policyManagerAddress,
     abi: policyManagerAbi,
@@ -278,8 +279,13 @@ export const getOracleDecisionForPolicy = async (policyId: bigint) => {
   const [winningOutcome, winningSources] = rankedOutcomes[0];
   const consensusDelayMinutes =
     winningOutcome === 2 ? getMedianDelay(winningSources.map(source => source.delayMinutes)) : 0;
-  const payoutEligible = isPayoutEligible(policy, winningOutcome, consensusDelayMinutes);
-  const baseReason = getReason(policy, winningOutcome, consensusDelayMinutes, matchedFlight.currentStatus);
+  const payoutEligible = isOracleDecisionPayoutEligible(policy, winningOutcome, consensusDelayMinutes);
+  const baseReason = getOracleDecisionReason(
+    policy,
+    winningOutcome,
+    consensusDelayMinutes,
+    matchedFlight.currentStatus,
+  );
   const latestStatusUpdate = matchedFlight.statusUpdates[0];
 
   return {

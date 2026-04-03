@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatUnits } from "viem";
+import { formatFlightStatusLabel, formatOracleWorkerError, getOutcomeLabel } from "~~/lib/oracle-display";
 import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 
 type OracleAuditMetadata = {
@@ -54,54 +55,18 @@ type OracleHistoryResponse = {
   };
 };
 
-type OracleDisplayStatus = "Pending Callback" | "Paid Out" | "No Payout" | "Failed" | "Expired";
+type OracleDisplayStatus = "Pending Callback" | "Payout Eligible" | "Paid Out" | "No Payout" | "Failed" | "Expired";
 
 const HISTORY_REFRESH_INTERVAL_MS = 10_000;
-
-const formatFlightStatusLabel = (flightStatus: string | null | undefined) => {
-  if (!flightStatus) {
-    return "Unknown";
-  }
-
-  switch (flightStatus) {
-    case "SCHEDULED":
-      return "Scheduled";
-    case "DELAYED":
-      return "Delayed";
-    case "CANCELLED":
-      return "Cancelled";
-    case "DEPARTED":
-      return "Departed";
-    case "ARRIVED":
-      return "Arrived";
-    default:
-      return flightStatus;
-  }
-};
-
-const getOutcomeLabel = (outcome: number | null | undefined, flightStatus?: string | null) => {
-  switch (outcome) {
-    case 1:
-      return "On Time";
-    case 2:
-      return "Delayed";
-    case 3:
-      return "Cancelled";
-    default:
-      if (flightStatus === "SCHEDULED") {
-        return "Scheduled";
-      }
-      if (flightStatus === "DEPARTED" || flightStatus === "ARRIVED") {
-        return "No disruption";
-      }
-      return "Unresolved";
-  }
-};
 
 const getDisplayStatus = (audit: OracleAuditRecord): OracleDisplayStatus => {
   switch (audit.auditStatus) {
     case "FULFILLED":
-      return audit.payoutExecuted ? "Paid Out" : "No Payout";
+      if (audit.payoutExecuted) {
+        return "Paid Out";
+      }
+
+      return audit.payoutEligible ? "Payout Eligible" : "No Payout";
     case "FAILED":
       return "Failed";
     case "EXPIRED":
@@ -115,6 +80,8 @@ const getDisplayStatus = (audit: OracleAuditRecord): OracleDisplayStatus => {
 
 const getDisplayTone = (displayStatus: OracleDisplayStatus) => {
   switch (displayStatus) {
+    case "Payout Eligible":
+      return "badge-warning";
     case "Paid Out":
       return "badge-success";
     case "No Payout":
@@ -141,7 +108,7 @@ const getDisplayReason = (audit: OracleAuditRecord) => {
   const storedReason = audit.metadata?.reason;
 
   if (!storedReason) {
-    return "No reason stored";
+    return formatOracleWorkerError(audit.errorMessage) ?? "No reason stored";
   }
 
   if (storedReason.startsWith("Flight data is still unresolved in Postgres.") && audit.flightStatus === "SCHEDULED") {
@@ -240,6 +207,7 @@ export const OracleAutomationPanel = () => {
       },
       {
         "Pending Callback": 0,
+        "Payout Eligible": 0,
         "Paid Out": 0,
         "No Payout": 0,
         Failed: 0,
@@ -261,8 +229,9 @@ export const OracleAutomationPanel = () => {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <SummaryCard label="Pending Callback" value={displaySummary["Pending Callback"]} />
+        <SummaryCard label="Payout Eligible" value={displaySummary["Payout Eligible"]} />
         <SummaryCard label="Paid Out" value={displaySummary["Paid Out"]} />
         <SummaryCard label="No Payout" value={displaySummary["No Payout"]} />
         <SummaryCard label="Failed" value={displaySummary.Failed} />
@@ -422,7 +391,7 @@ export const OracleAutomationPanel = () => {
                 {selectedAudit.errorMessage ? (
                   <div className="rounded-2xl border border-error/20 bg-error/5 p-4 text-error">
                     <div className="font-semibold">Worker Error</div>
-                    <div className="mt-2 text-sm">{selectedAudit.errorMessage}</div>
+                    <div className="mt-2 text-sm">{formatOracleWorkerError(selectedAudit.errorMessage)}</div>
                   </div>
                 ) : null}
               </div>

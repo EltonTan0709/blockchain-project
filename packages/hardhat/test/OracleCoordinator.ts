@@ -115,6 +115,32 @@ describe("Oracle coordinator workflow", function () {
     expect(await insurancePool.totalPayouts()).to.equal(200_000_000n);
   });
 
+  it("allows the owner to withdraw only excess liquidity above active policy reserve", async function () {
+    const { owner, traveler, mockUSDC, insurancePool, policyManager } = await deployFixture();
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const departureTimestamp = BigInt(latestBlock!.timestamp + 3600);
+
+    await policyManager
+      .connect(traveler)
+      .buyPolicy("SQ318", departureTimestamp, 0, 200_000_000, 24 * 3600, 360, 10_000_000);
+
+    expect(await policyManager.totalActiveCoverageAmount()).to.equal(200_000_000n);
+    expect(await insurancePool.getRequiredReserve()).to.equal(200_000_000n);
+    expect(await insurancePool.getWithdrawableAmount()).to.equal(4_810_000_000n);
+
+    const ownerBalanceBefore = await mockUSDC.balanceOf(owner.address);
+    await insurancePool.connect(owner).withdrawExcessLiquidity(4_810_000_000n);
+
+    expect(await mockUSDC.balanceOf(owner.address)).to.equal(ownerBalanceBefore + 4_810_000_000n);
+    expect(await insurancePool.getPoolBalance()).to.equal(200_000_000n);
+    expect(await insurancePool.getWithdrawableAmount()).to.equal(0n);
+
+    await expect(insurancePool.connect(owner).withdrawExcessLiquidity(1)).to.be.revertedWith(
+      "Amount exceeds withdrawable balance",
+    );
+  });
+
   it("does not pay out when the delay is below the purchased threshold", async function () {
     const { traveler, oracleReporter, automationForwarder, mockUSDC, oracleCoordinator, policyManager } =
       await deployFixture();
@@ -140,6 +166,33 @@ describe("Oracle coordinator workflow", function () {
 
     const policy = await policyManager.getPolicy(1);
     expect(policy.status).to.equal(1n);
+  });
+
+  it("releases reserved coverage after a no-payout oracle resolution", async function () {
+    const { traveler, oracleReporter, automationForwarder, insurancePool, oracleCoordinator, policyManager } =
+      await deployFixture();
+
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const departureTimestamp = BigInt(latestBlock!.timestamp + 1800);
+
+    await policyManager
+      .connect(traveler)
+      .buyPolicy("BA12", departureTimestamp, 0, 150_000_000, 12 * 3600, 720, 8_000_000);
+
+    expect(await insurancePool.getRequiredReserve()).to.equal(150_000_000n);
+
+    await ethers.provider.send("evm_setNextBlockTimestamp", [Number(departureTimestamp + 2n)]);
+    await ethers.provider.send("evm_mine", []);
+
+    await oracleCoordinator
+      .connect(automationForwarder)
+      .performUpkeep(ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1n]));
+
+    await oracleCoordinator.connect(oracleReporter).fulfillOracleCheck(1, 2, 180);
+
+    expect(await policyManager.totalActiveCoverageAmount()).to.equal(0n);
+    expect(await insurancePool.getRequiredReserve()).to.equal(0n);
+    expect(await insurancePool.getWithdrawableAmount()).to.equal(5_008_000_000n);
   });
 
   it("pays out a cancellation policy when the oracle returns cancelled", async function () {

@@ -7,6 +7,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
+interface IPolicyReserveSource {
+    function totalActiveCoverageAmount() external view returns (uint256);
+}
+
 contract InsurancePool is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
@@ -20,6 +24,7 @@ contract InsurancePool is Ownable, ReentrancyGuard, Pausable {
     mapping(address => uint256) public liquidityProvided;
 
     event LiquidityDeposited(address indexed provider, uint256 amount);
+    event LiquidityWithdrawn(address indexed recipient, uint256 amount, uint256 requiredReserve, uint256 poolBalance);
     event PolicyManagerSet(address indexed policyManager);
     event PremiumReceived(address indexed payer, uint256 amount);
     event PayoutExecuted(address indexed recipient, uint256 amount);
@@ -54,6 +59,28 @@ contract InsurancePool is Ownable, ReentrancyGuard, Pausable {
         emit LiquidityDeposited(msg.sender, amount);
     }
 
+    function withdrawExcessLiquidity(uint256 amount) external onlyOwner nonReentrant whenNotPaused {
+        require(amount > 0, "Amount must be > 0");
+
+        uint256 withdrawableAmount = getWithdrawableAmount();
+        require(amount <= withdrawableAmount, "Amount exceeds withdrawable balance");
+
+        uint256 providerBalance = liquidityProvided[msg.sender];
+        if (providerBalance != 0) {
+            uint256 providerReduction = amount > providerBalance ? providerBalance : amount;
+            liquidityProvided[msg.sender] = providerBalance - providerReduction;
+        }
+
+        if (totalLiquidity != 0) {
+            uint256 liquidityReduction = amount > totalLiquidity ? totalLiquidity : amount;
+            totalLiquidity -= liquidityReduction;
+        }
+
+        stablecoin.safeTransfer(msg.sender, amount);
+
+        emit LiquidityWithdrawn(msg.sender, amount, getRequiredReserve(), stablecoin.balanceOf(address(this)));
+    }
+
     function receivePremium(address payer, uint256 amount) external onlyPolicyManager whenNotPaused {
         require(payer != address(0), "Invalid payer");
         require(amount > 0, "Amount must be > 0");
@@ -84,5 +111,20 @@ contract InsurancePool is Ownable, ReentrancyGuard, Pausable {
 
     function getPoolBalance() external view returns (uint256) {
         return stablecoin.balanceOf(address(this));
+    }
+
+    function getRequiredReserve() public view returns (uint256) {
+        if (policyManager == address(0)) {
+            return 0;
+        }
+
+        return IPolicyReserveSource(policyManager).totalActiveCoverageAmount();
+    }
+
+    function getWithdrawableAmount() public view returns (uint256) {
+        uint256 poolBalance = stablecoin.balanceOf(address(this));
+        uint256 requiredReserve = getRequiredReserve();
+
+        return poolBalance > requiredReserve ? poolBalance - requiredReserve : 0;
     }
 }
