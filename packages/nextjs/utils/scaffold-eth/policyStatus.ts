@@ -1,4 +1,4 @@
-export type DisplayPolicyStatus = "Pending" | "Expired" | "Claimed" | "Paid Out" | "Unknown";
+export type DisplayPolicyStatus = "Pending" | "Expired" | "Rejected" | "Claimed" | "Paid Out" | "Unknown";
 
 export const getPolicyTypeText = (policyType: number) => {
   switch (policyType) {
@@ -16,11 +16,11 @@ export const getContractStatusText = (status: number) => {
     case 0:
       return "Active";
     case 1:
-      return "Expired";
+      return "Rejected";
     case 2:
       return "Claimed";
     case 3:
-      return "PaidOut";
+      return "Paid Out";
     default:
       return "Unknown";
   }
@@ -31,7 +31,7 @@ export const getDisplayPolicyStatus = (status: number, endTime: bigint) => {
 
   if (status === 3) return "Paid Out";
   if (status === 2) return "Claimed";
-  if (status === 1) return "Expired";
+  if (status === 1) return "Rejected";
 
   if (status === 0) {
     return Number(endTime) < now ? "Expired" : "Pending";
@@ -46,6 +46,8 @@ export const getStatusBadgeClass = (displayStatus: DisplayPolicyStatus) => {
       return "badge badge-warning";
     case "Expired":
       return "badge badge-neutral";
+    case "Rejected":
+      return "badge badge-error";
     case "Claimed":
       return "badge badge-info";
     case "Paid Out":

@@ -114,9 +114,18 @@ const isPayoutEligible = (policy: PolicySnapshot, oracleOutcome: number, delayMi
     : oracleOutcome === 3;
 };
 
-const getReason = (policy: PolicySnapshot, oracleOutcome: number, delayMinutes: number) => {
+const getReason = (
+  policy: PolicySnapshot,
+  oracleOutcome: number,
+  delayMinutes: number,
+  flightStatus?: string | null,
+) => {
   if (oracleOutcome === 0) {
-    return "Flight data is still unresolved in Postgres.";
+    if (flightStatus === "SCHEDULED") {
+      return "Flight record exists in Postgres, but it is still scheduled and no qualifying disruption has been recorded.";
+    }
+
+    return "Flight record exists in Postgres, but the outcome is still unresolved.";
   }
 
   if (policy.policyType === 0) {
@@ -270,7 +279,7 @@ export const getOracleDecisionForPolicy = async (policyId: bigint) => {
   const consensusDelayMinutes =
     winningOutcome === 2 ? getMedianDelay(winningSources.map(source => source.delayMinutes)) : 0;
   const payoutEligible = isPayoutEligible(policy, winningOutcome, consensusDelayMinutes);
-  const baseReason = getReason(policy, winningOutcome, consensusDelayMinutes);
+  const baseReason = getReason(policy, winningOutcome, consensusDelayMinutes, matchedFlight.currentStatus);
   const latestStatusUpdate = matchedFlight.statusUpdates[0];
 
   return {

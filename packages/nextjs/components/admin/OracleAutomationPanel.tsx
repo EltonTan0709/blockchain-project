@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatUnits } from "viem";
+import { CONTRACTS } from "~~/utils/scaffold-eth/contract";
 
 type OracleAuditMetadata = {
   sources?: Array<{
@@ -133,6 +135,35 @@ const getSourceDelayLabel = (outcome: number, delayMinutes: number) => {
   }
 
   return "Delay: not applied";
+};
+
+const getDisplayReason = (audit: OracleAuditRecord) => {
+  const storedReason = audit.metadata?.reason;
+
+  if (!storedReason) {
+    return "No reason stored";
+  }
+
+  if (storedReason.startsWith("Flight data is still unresolved in Postgres.") && audit.flightStatus === "SCHEDULED") {
+    return storedReason.replace(
+      "Flight data is still unresolved in Postgres.",
+      "Flight record exists in Postgres, but it is still scheduled and no qualifying disruption has been recorded.",
+    );
+  }
+
+  return storedReason;
+};
+
+const formatUsdcAmount = (amount: string | null | undefined) => {
+  if (!amount) {
+    return "0 USDC";
+  }
+
+  try {
+    return `${formatUnits(BigInt(amount), CONTRACTS.TOKEN_DECIMALS)} USDC`;
+  } catch {
+    return `${amount} USDC`;
+  }
 };
 
 const SummaryCard = ({ label, value }: { label: string; value: number }) => {
@@ -330,7 +361,8 @@ export const OracleAutomationPanel = () => {
                   </div>
                   {selectedAudit.payoutExecuted || selectedAudit.payoutAmount !== "0" ? (
                     <div>
-                      <span className="font-semibold">Payout Amount:</span> {selectedAudit.payoutAmount ?? "0"} USDC
+                      <span className="font-semibold">Payout Amount:</span>{" "}
+                      {formatUsdcAmount(selectedAudit.payoutAmount)}
                     </div>
                   ) : null}
                 </div>
@@ -352,8 +384,7 @@ export const OracleAutomationPanel = () => {
                       </div>
                     ) : null}
                     <div>
-                      <span className="font-semibold">Reason:</span>{" "}
-                      {selectedAudit.metadata?.reason ?? "No reason stored"}
+                      <span className="font-semibold">Reason:</span> {getDisplayReason(selectedAudit)}
                     </div>
                   </div>
                 </div>
